@@ -1,0 +1,29 @@
+[Unit]
+Description=Gufo Inference Server (AMD Strix Halo gfx1151 + XDNA2)
+After=network.target local-fs.target
+Documentation=https://github.com/gufo-org/toolboxes
+
+[Service]
+Type=simple
+Environment=HOST=127.0.0.1
+Environment=PORT=8080
+Environment=MODEL_PATH=%h/.local/share/gufo/models/model.gguf
+Environment=THREADS=8
+
+# Run inside the gufo-runtime container using podman
+ExecStart=/usr/bin/podman run --rm --name gufo-serve \
+  --device /dev/kfd --device /dev/dri \
+  --device /dev/accel/accel0 \
+  --group-add video --group-add render \
+  --security-opt seccomp=unconfined --ulimit memlock=-1 \
+  -v %h/.local/share/gufo/models:/models:ro,z \
+  -p ${PORT}:${PORT} \
+  ghcr.io/gufo-org/toolboxes/gufo-runtime:latest \
+  gufo serve --model /models/model.gguf --host ${HOST} --port ${PORT} --threads ${THREADS}
+
+ExecStop=/usr/bin/podman stop -t 10 gufo-serve
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=default.target

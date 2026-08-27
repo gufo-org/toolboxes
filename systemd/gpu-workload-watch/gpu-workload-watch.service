@@ -1,0 +1,14 @@
+[Unit]
+Description=Manage power profile for Gufo GPU inference workloads
+Wants=tuned.service
+After=multi-user.target tuned.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/sbin/gpu-workload-watch
+Restart=always
+RestartSec=2s
+LimitCORE=0
+
+[Install]
+WantedBy=multi-user.target

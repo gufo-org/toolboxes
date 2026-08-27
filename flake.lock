@@ -1,0 +1,62 @@
+{
+  "nodes": {
+    "gufo-engine": {
+      "inputs": {
+        "nixpkgs": "nixpkgs"
+      },
+      "locked": {
+        "lastModified": 1787839541,
+        "narHash": "sha256-yHvZodZEC0v2hL9AQEaw4XFXzexMeMT7uT/yu69JK6w=",
+        "ref": "refs/heads/main",
+        "rev": "81ba5df82e2d57dd899f53c0f1aaf5e98fd8cbc9",
+        "revCount": 200,
+        "type": "git",
+        "url": "ssh://git@github.com/francescobozzo/strix-halo.cpp.git"
+      },
+      "original": {
+        "type": "git",
+        "url": "ssh://git@github.com/francescobozzo/strix-halo.cpp.git"
+      }
+    },
+    "nixpkgs": {
+      "locked": {
+        "lastModified": 1786384358,
+        "narHash": "sha256-RzPPiWeUtuvymnpuEWsdtzli5w4kjZs49FqEs3/1u+I=",
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "2fcb964de67fcf60b43471c55d5d99e61a9ccb5a",
+        "type": "github"
+      },
+      "original": {
+        "owner": "NixOS",
+        "ref": "nixos-unstable",
+        "repo": "nixpkgs",
+        "type": "github"
+      }
+    },
+    "nixpkgs_2": {
+      "locked": {
+        "lastModified": 1787498568,
+        "narHash": "sha256-9i/VTdusq/+NM/tz+J1Re+ojkMB8MBf0QshnYfzHz30=",
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "56c02bc00adcf003215cc4bd996d6efaf4cff188",
+        "type": "github"
+      },
+      "original": {
+        "owner": "NixOS",
+        "ref": "nixos-unstable",
+        "repo": "nixpkgs",
+        "type": "github"
+      }
+    },
+    "root": {
+      "inputs": {
+        "gufo-engine": "gufo-engine",
+        "nixpkgs": "nixpkgs_2"
+      }
+    }
+  },
+  "root": "root",
+  "version": 7
+}

@@ -1,0 +1,92 @@
+#!/usr/bin/env bash
+
+set -u
+
+export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
+load_threshold=20
+idle_threshold=10
+load_seconds=2
+idle_seconds=60
+tuned_command_timeout_seconds=20
+tuned_reconcile_seconds=15
+tuned_restart_after_failures=2
+ectool_command_timeout_seconds=10
+fan_reconcile_seconds=15
+
+ectool_bin="$(command -v ectool || true)"
+tuned_adm_bin="$(command -v tuned-adm || true)"
+systemctl_bin="$(command -v systemctl || true)"
+timeout_bin="$(command -v timeout || true)"
+systemd_notify_bin="$(command -v systemd-notify || true)"
+
+fan_mode="unknown"
+fan_reconcile_count=0
+tuned_mode="unknown"
+tuned_failures=0
+tuned_reconcile_count=0
+load_count=0
+idle_count=0
+no_workload_count=0
+gpu_busy_file=""
+tuned_worker_pid=""
+
+for candidate in /sys/class/drm/card*/device/gpu_busy_percent; do
+    if [[ -r "${candidate}" ]] && [[ "$(< "${candidate%/gpu_busy_percent}/vendor")" == "0x1002" ]]; then
+        gpu_busy_file="${candidate}"
+        break
+    fi
+done
+
+if [[ -z "${gpu_busy_file}" ]]; then
+    echo "No AMDGPU gpu_busy_percent counter found" >&2
+    exit 1
+fi
+
+gpu_workload_is_running() {
+    local proc comm lower
+    for proc in /proc/[0-9]*; do
+        [[ -r "${proc}/comm" ]] || continue
+        read -r comm < "${proc}/comm" 2>/dev/null || continue
+        lower="${comm,,}"
+        case "${lower}" in
+            gufo*|strix*|llama-*|ds4-*|*hipfire*|*vllm*)
+                return 0
+                ;;
+        esac
+    done
+    return 1
+}
+
+apply_tuned_profile() {
+    local profile="$1"
+    if [[ -n "${tuned_adm_bin}" ]]; then
+        "${timeout_bin}" "${tuned_command_timeout_seconds}" "${tuned_adm_bin}" profile "${profile}" >/dev/null 2>&1 || true
+    fi
+}
+
+echo "Starting Gufo GPU Workload Watcher on ${gpu_busy_file}..."
+
+while true; do
+    read -r busy < "${gpu_busy_file}" 2>/dev/null || busy=0
+
+    if gpu_workload_is_running && (( busy >= load_threshold )); then
+        (( load_count++ ))
+        idle_count=0
+        if (( load_count >= load_seconds )) && [[ "${tuned_mode}" != "throughput-performance" ]]; then
+            echo "GPU active (${busy}%). Switching to throughput-performance profile."
+            apply_tuned_profile "throughput-performance"
+            tuned_mode="throughput-performance"
+        fi
+    else
+        (( idle_count++ ))
+        load_count=0
+        if (( idle_count >= idle_seconds )) && [[ "${tuned_mode}" != "balanced" ]]; then
+            echo "GPU idle (${busy}%). Switching to balanced profile."
+            apply_tuned_profile "balanced"
+            tuned_mode="balanced"
+        fi
+    fi
+
+    sleep 1
+done

@@ -1,0 +1,24 @@
+name: Prune Old Container Images
+
+on:
+  schedule:
+    # Run once a week at midnight Sunday
+    - cron: '0 0 * * 0'
+  workflow_dispatch:
+
+permissions:
+  packages: write
+
+jobs:
+  prune:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Prune old container versions in GHCR
+        uses: snok/container-retention-policy@v3
+        with:
+          image-names: "gufo-runtime,gufo-dev"
+          cut-off: 30d
+          account-type: org
+          org-name: gufo-org
+          keep-at-least: 3
+          token: ${{ secrets.GITHUB_TOKEN }}
