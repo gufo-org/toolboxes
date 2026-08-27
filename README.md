@@ -99,4 +99,4 @@ See [docs/systemd.md](docs/systemd.md) for full configuration options.
 
 ## 📜 License
 
-Apache-2.0.
+MIT License. See [LICENSE](LICENSE) for details.
