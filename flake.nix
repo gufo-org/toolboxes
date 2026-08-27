@@ -61,9 +61,9 @@
           ln -sf /bin/bash usr/bin/sh
           ln -sf /bin/env usr/bin/env
 
-          # Create gufo alias / compatibility wrapper if strix binary is present
-          if [ -f bin/strix ]; then
-            ln -sf strix bin/gufo
+          # Create legacy compatibility alias if gufo binary is present
+          if [ -f bin/gufo ]; then
+            ln -sf gufo bin/strix
           fi
 
           # Ensure etc is writable and clean any read-only links from packages
@@ -184,9 +184,9 @@
             config = {
               Env = commonEnv system ++ [
                 "ROCM_PATH=${p.rocmPackages.clr}"
-                "STRIX_HIPCUB_ROOT=${p.rocmPackages.hipcub}"
-                "STRIX_ROCPRIM_ROOT=${p.rocmPackages.rocprim}"
-                "STRIX_ROCWMMA_ROOT=${p.rocmPackages.rocwmma}"
+                "GUFO_HIPCUB_ROOT=${p.rocmPackages.hipcub}"
+                "GUFO_ROCPRIM_ROOT=${p.rocmPackages.rocprim}"
+                "GUFO_ROCWMMA_ROOT=${p.rocmPackages.rocwmma}"
               ];
               Cmd = [ "/bin/bash" ];
             };
@@ -214,9 +214,9 @@
             config = {
               Env = commonEnv system ++ [
                 "ROCM_PATH=${p.rocmPackages.clr}"
-                "STRIX_HIPCUB_ROOT=${p.rocmPackages.hipcub}"
-                "STRIX_ROCPRIM_ROOT=${p.rocmPackages.rocprim}"
-                "STRIX_ROCWMMA_ROOT=${p.rocmPackages.rocwmma}"
+                "GUFO_HIPCUB_ROOT=${p.rocmPackages.hipcub}"
+                "GUFO_ROCPRIM_ROOT=${p.rocmPackages.rocprim}"
+                "GUFO_ROCWMMA_ROOT=${p.rocmPackages.rocwmma}"
               ];
               Cmd = [ "/bin/bash" ];
             };
