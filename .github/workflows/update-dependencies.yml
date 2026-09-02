@@ -1,0 +1,60 @@
+name: Update Gufo Dependencies
+
+on:
+  schedule:
+    # Daily at 04:23 UTC. The non-round minute reduces scheduler congestion.
+    - cron: "23 4 * * *"
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: write
+
+concurrency:
+  group: update-gufo-dependencies
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v31.11.1
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+            accept-flake-config = true
+
+      - name: Update Gufo and eval-agent inputs
+        run: nix flake update gufo-engine eval-agent
+
+      - name: Validate updated lock file
+        run: nix flake check --no-build
+
+      - name: Commit and push lock-file changes
+        id: commit
+        shell: bash
+        run: |
+          if git diff --quiet -- flake.lock; then
+            echo "No dependency updates available."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add flake.lock
+          git commit -m "chore(deps): update Gufo and eval-agent"
+          git push origin HEAD:main
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Build updated images
+        if: steps.commit.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run build_and_publish.yml --ref main -f images=all

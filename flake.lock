@@ -10,15 +10,15 @@
       "locked": {
         "lastModified": 1788287970,
         "narHash": "sha256-lys4iIyapKgMsprZ4YDqcvVqsBRacuWer5scLs1jY30=",
-        "ref": "refs/heads/main",
+        "owner": "gufo-org",
+        "repo": "eval-agent",
         "rev": "3e0d09a3e582715e80fec975307518a5968c3fe5",
-        "revCount": 12,
-        "type": "git",
-        "url": "ssh://git@github.com/gufo-org/eval-agent.git"
+        "type": "github"
       },
       "original": {
-        "type": "git",
-        "url": "ssh://git@github.com/gufo-org/eval-agent.git"
+        "owner": "gufo-org",
+        "repo": "eval-agent",
+        "type": "github"
       }
     },
     "flake-utils": {
@@ -46,15 +46,15 @@
       "locked": {
         "lastModified": 1788330064,
         "narHash": "sha256-6vh/jIDTqbPtg6glHsR80YvY7uYbCmgCORPhPmzevhY=",
-        "ref": "refs/heads/main",
+        "owner": "gufo-org",
+        "repo": "gufo",
         "rev": "fb84b0fc0c2cc14b8584cd5620a61f1d23b0c6bf",
-        "revCount": 235,
-        "type": "git",
-        "url": "ssh://git@github.com/gufo-org/gufo.git"
+        "type": "github"
       },
       "original": {
-        "type": "git",
-        "url": "ssh://git@github.com/gufo-org/gufo.git"
+        "owner": "gufo-org",
+        "repo": "gufo",
+        "type": "github"
       }
     },
     "nixpkgs": {

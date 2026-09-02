@@ -3,9 +3,9 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
-    gufo-engine.url = "git+ssh://git@github.com/gufo-org/gufo.git";
+    gufo-engine.url = "github:gufo-org/gufo";
     eval-agent = {
-      url = "git+ssh://git@github.com/gufo-org/eval-agent.git";
+      url = "github:gufo-org/eval-agent";
       inputs.nixpkgs.follows = "nixpkgs";
     };
   };
