@@ -16,7 +16,7 @@ jobs:
       - name: Prune old container versions in GHCR
         uses: snok/container-retention-policy@v3
         with:
-          image-names: "gufo-runtime,gufo-dev"
+          image-names: "gufo-runtime,gufo-dev,eval-agent,gufo-eval-agent"
           cut-off: 30d
           account-type: org
           org-name: gufo-org

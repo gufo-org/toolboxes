@@ -14,6 +14,8 @@ Built directly from **Nix flake derivations** to guarantee bit-for-bit reproduci
 | :--- | :--- | :--- |
 | **`gufo-runtime`** | `ghcr.io/gufo-org/toolboxes/gufo-runtime:latest` | Lightweight production inference runtime for `gufo serve`, `gufo prompt`, `gufo bench`, and `gufo diagnose`. Includes ROCm `gfx1151` and XRT/XDNA2 runtimes. |
 | **`gufo-dev`** | `ghcr.io/gufo-org/toolboxes/gufo-dev:latest` | Interactive development & profiling container. Includes full ROCm SDK, HIP compiler, `rocprofv3`, Clang tools, CMake, and Ninja for kernel development. |
+| **`eval-agent`** | `ghcr.io/gufo-org/toolboxes/eval-agent:latest` | Reproducible coding-agent evaluator. Connect it to any reachable OpenAI-compatible endpoint with `--base-url`. |
+| **`gufo-eval-agent`** | `ghcr.io/gufo-org/toolboxes/gufo-eval-agent:latest` | Gufo and eval-agent together, with a launcher that starts a local Gufo server before the evaluation and stops it afterward. |
 
 ---
 
@@ -42,6 +44,45 @@ toolbox enter gufo-runtime      # on Fedora
 distrobox enter gufo-runtime    # on Ubuntu / Arch
 ```
 
+### Evaluate an external endpoint
+
+```bash
+./refresh-toolboxes.sh eval-agent
+toolbox enter eval-agent
+
+eval-agent doctor
+eval-agent run sparql-university \
+  --base-url http://192.168.1.8:8080/v1
+```
+
+Pass credentials through `GUFO_EVAL_API_KEY`; the evaluator never writes the
+credential to its result artifact.
+
+### Start Gufo and evaluate it
+
+The combined image provides `eval-agent-with-gufo`. Launcher options go before
+`--`; eval-agent arguments go after it. The launcher waits for Gufo's
+`/v1/models` endpoint and always terminates the server when the evaluation
+finishes or is interrupted.
+
+```bash
+./refresh-toolboxes.sh gufo-eval-agent
+toolbox enter gufo-eval-agent
+
+eval-agent-with-gufo --model /path/to/model.gguf -- \
+  run sparql-university \
+  --output /path/to/results/result.json \
+  --platform strix-halo \
+  --engine gufo \
+  --backend rocm
+```
+
+The server defaults match eval-agent's agent-loop settings: port `8080`, a
+`32768`-token context, and `16384` maximum generated tokens. Use launcher
+options or `GUFO_MODEL`, `GUFO_HOST`, `GUFO_PORT`, `GUFO_CONTEXT`, and
+`GUFO_MAX_TOKENS` to override them. Repeat `--llm-arg ARG` for additional
+Gufo LLM options.
+
 ### 3. Verify Hardware & Run Inference
 
 Inside the toolbox:
@@ -66,6 +107,10 @@ For maintainers or developers who want to rebuild the container images from sour
 ```bash
 # Stream the OCI image directly into local Podman/Docker:
 nix run .#stream-gufo-runtime | podman load
+
+# Eval-only and combined evaluation images:
+nix run .#stream-eval-agent | podman load
+nix run .#stream-gufo-eval-agent | podman load
 
 # Or build the image tarball:
 nix build .#packages.x86_64-linux.gufo-runtime-image

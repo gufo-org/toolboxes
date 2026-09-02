@@ -7,12 +7,14 @@ set -euo pipefail
 declare -A IMAGES
 IMAGES["gufo-runtime"]="ghcr.io/gufo-org/toolboxes/gufo-runtime:latest"
 IMAGES["gufo-dev"]="ghcr.io/gufo-org/toolboxes/gufo-dev:latest"
+IMAGES["eval-agent"]="ghcr.io/gufo-org/toolboxes/eval-agent:latest"
+IMAGES["gufo-eval-agent"]="ghcr.io/gufo-org/toolboxes/gufo-eval-agent:latest"
 
 FORCE_RECREATE=false
 
 usage() {
   cat << EOF
-Usage: $0 [options] [all|gufo-runtime|gufo-dev]
+Usage: $0 [options] [all|gufo-runtime|gufo-dev|eval-agent|gufo-eval-agent]
 
 A helper script to create and manage Gufo Toolboxes on AMD Strix Halo.
 Requires only Podman/Docker and Toolbox/Distrobox (no Nix required).
@@ -24,11 +26,16 @@ Options:
 Available Toolboxes:
   - gufo-runtime  Lightweight inference runtime (gufo serve, prompt, bench, diagnose)
   - gufo-dev      Full development, profiling (rocprofv3), and kernel tuning environment
-  - all           Create/refresh both toolboxes
+  - eval-agent    Coding-agent evaluation against an endpoint you select
+  - gufo-eval-agent
+                  Gufo server and eval-agent with an automatic server launcher
+  - all           Create/refresh all toolboxes
 
 Examples:
   $0 gufo-runtime
   $0 gufo-dev
+  $0 eval-agent
+  $0 gufo-eval-agent
   $0 -f all
 EOF
   exit 1
@@ -61,7 +68,7 @@ TARGET="$1"
 SELECTED_TOOLBOXES=()
 
 if [[ "$TARGET" == "all" ]]; then
-  SELECTED_TOOLBOXES=("gufo-runtime" "gufo-dev")
+  SELECTED_TOOLBOXES=("gufo-runtime" "gufo-dev" "eval-agent" "gufo-eval-agent")
 elif [[ -v IMAGES["$TARGET"] ]]; then
   SELECTED_TOOLBOXES=("$TARGET")
 else
@@ -167,8 +174,10 @@ for TB in "${SELECTED_TOOLBOXES[@]}"; do
       echo "🗑️  Removing existing container '$TB'..."
       if [[ "$TOOLBOX_CMD" == "distrobox" ]]; then
         distrobox rm -f "$TB"
-      else
+      elif [[ "$TOOLBOX_CMD" == "toolbox" ]]; then
         toolbox rm -f "$TB"
+      else
+        "$CONTAINER_ENGINE" rm -f "$TB"
       fi
     else
       echo "ℹ️  Toolbox '$TB' already exists. Use -f or --force to recreate."
@@ -182,14 +191,27 @@ for TB in "${SELECTED_TOOLBOXES[@]}"; do
       --name "$TB" \
       --image "$IMG" \
       --additional-flags "${PASSTHROUGH_ARGS[*]}"
-  else
+  elif [[ "$TOOLBOX_CMD" == "toolbox" ]]; then
     toolbox create "$TB" \
       --image "$IMG" \
       -- "${PASSTHROUGH_ARGS[@]}"
+  else
+    "$CONTAINER_ENGINE" run \
+      --detach \
+      --interactive \
+      --tty \
+      --name "$TB" \
+      "${PASSTHROUGH_ARGS[@]}" \
+      "$IMG" \
+      /bin/bash
   fi
 
   echo "✅ Successfully created '$TB'!"
-  echo "👉 Enter with: $TOOLBOX_CMD enter $TB"
+  if [[ "$TOOLBOX_CMD" == "$CONTAINER_ENGINE" ]]; then
+    echo "👉 Enter with: $CONTAINER_ENGINE exec -it $TB /bin/bash"
+  else
+    echo "👉 Enter with: $TOOLBOX_CMD enter $TB"
+  fi
 done
 
 echo ""

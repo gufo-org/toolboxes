@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       images:
-        description: 'Toolboxes to build ("gufo-runtime", "gufo-dev", or "all")'
+        description: 'Comma-separated toolboxes to build, or "all"'
         required: false
         default: 'all'
 
@@ -30,7 +30,7 @@ jobs:
         run: |
           IN='${{ github.event.inputs.images || "all" }}'
           if [[ "$IN" == "all" || -z "$IN" ]]; then
-            echo 'matrix_json=["gufo-runtime","gufo-dev"]' >> "$GITHUB_OUTPUT"
+            echo 'matrix_json=["gufo-runtime","gufo-dev","eval-agent","gufo-eval-agent"]' >> "$GITHUB_OUTPUT"
           else
             IN_CLEAN=$(echo "$IN" | tr -d '[:space:]')
             echo "matrix_json=[\"${IN_CLEAN//,/\",\"}\"]" >> "$GITHUB_OUTPUT"

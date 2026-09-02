@@ -1,21 +1,60 @@
 {
   "nodes": {
+    "eval-agent": {
+      "inputs": {
+        "flake-utils": "flake-utils",
+        "nixpkgs": [
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1788287970,
+        "narHash": "sha256-lys4iIyapKgMsprZ4YDqcvVqsBRacuWer5scLs1jY30=",
+        "ref": "refs/heads/main",
+        "rev": "3e0d09a3e582715e80fec975307518a5968c3fe5",
+        "revCount": 12,
+        "type": "git",
+        "url": "ssh://git@github.com/gufo-org/eval-agent.git"
+      },
+      "original": {
+        "type": "git",
+        "url": "ssh://git@github.com/gufo-org/eval-agent.git"
+      }
+    },
+    "flake-utils": {
+      "inputs": {
+        "systems": "systems"
+      },
+      "locked": {
+        "lastModified": 1731533236,
+        "narHash": "sha256-l0KFg5HjrsfsO/JpG+r7fRrqm12kzFHyUHqHCVpMMbI=",
+        "owner": "numtide",
+        "repo": "flake-utils",
+        "rev": "11707dc2f618dd54ca8739b309ec4fc024de578b",
+        "type": "github"
+      },
+      "original": {
+        "owner": "numtide",
+        "repo": "flake-utils",
+        "type": "github"
+      }
+    },
     "gufo-engine": {
       "inputs": {
         "nixpkgs": "nixpkgs"
       },
       "locked": {
-        "lastModified": 1787839541,
-        "narHash": "sha256-yHvZodZEC0v2hL9AQEaw4XFXzexMeMT7uT/yu69JK6w=",
+        "lastModified": 1788330064,
+        "narHash": "sha256-6vh/jIDTqbPtg6glHsR80YvY7uYbCmgCORPhPmzevhY=",
         "ref": "refs/heads/main",
-        "rev": "81ba5df82e2d57dd899f53c0f1aaf5e98fd8cbc9",
-        "revCount": 200,
+        "rev": "fb84b0fc0c2cc14b8584cd5620a61f1d23b0c6bf",
+        "revCount": 235,
         "type": "git",
-        "url": "ssh://git@github.com/francescobozzo/strix-halo.cpp.git"
+        "url": "ssh://git@github.com/gufo-org/gufo.git"
       },
       "original": {
         "type": "git",
-        "url": "ssh://git@github.com/francescobozzo/strix-halo.cpp.git"
+        "url": "ssh://git@github.com/gufo-org/gufo.git"
       }
     },
     "nixpkgs": {
@@ -52,8 +91,24 @@
     },
     "root": {
       "inputs": {
+        "eval-agent": "eval-agent",
         "gufo-engine": "gufo-engine",
         "nixpkgs": "nixpkgs_2"
+      }
+    },
+    "systems": {
+      "locked": {
+        "lastModified": 1681028828,
+        "narHash": "sha256-Vy1rq5AaRuLzOxct8nz4T6wlgyUR7zLU309k9mBC768=",
+        "owner": "nix-systems",
+        "repo": "default",
+        "rev": "da67096a3b9bf56a91d16901293e51ba5b49a27e",
+        "type": "github"
+      },
+      "original": {
+        "owner": "nix-systems",
+        "repo": "default",
+        "type": "github"
       }
     }
   },
