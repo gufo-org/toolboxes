@@ -14,8 +14,7 @@ Environment=THREADS=8
 ExecStart=/usr/bin/podman run --rm --name gufo-serve \
   --device /dev/kfd --device /dev/dri \
   --device /dev/accel/accel0 \
-  --group-add video --group-add render \
-  --security-opt seccomp=unconfined --ulimit memlock=-1 \
+  --group-add keep-groups --ulimit memlock=-1 \
   -v %h/.local/share/gufo/models:/models:ro,z \
   -p ${PORT}:${PORT} \
   ghcr.io/gufo-org/toolboxes/gufo-runtime:latest \

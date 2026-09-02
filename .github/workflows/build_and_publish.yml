@@ -1,4 +1,4 @@
-name: Build & Publish Gufo Toolboxes
+name: Build & Publish Gufo OCI Images
 
 on:
   push:
@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       images:
-        description: 'Comma-separated toolboxes to build, or "all"'
+        description: 'Comma-separated images to build, or "all"'
         required: false
         default: 'all'
 

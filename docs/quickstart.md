@@ -1,127 +1,108 @@
-# Gufo Toolboxes Quick Start
+# Gufo OCI Images Quick Start
 
-This guide gets you up and running with **Gufo Toolboxes** on AMD Ryzen AI Max ("Strix Halo") systems featuring the `gfx1151` RDNA 3.5 GPU and XDNA2 NPU.
+These images support Docker and Podman on Linux x86-64. Toolbx and Distrobox
+are intentionally unsupported.
 
----
+## Requirements
 
-## 1. Prerequisites
+- AMD Ryzen AI Max with the `gfx1151` GPU
+- Linux kernel 6.18.4 or newer
+- Podman or Docker
+- `/dev/kfd` and an AMD `/dev/dri/renderD*` node for GPU images
+- unprivileged user namespaces for eval-agent's Bubblewrap sandbox
 
-- **Host OS**: Fedora 42/43/44, Ubuntu 24.04+, Arch Linux, or openSUSE Tumbleweed.
-- **Kernel**: Linux kernel >= `6.18.4` (older kernels have known gfx1151 stability issues).
-- **Firmware**: Avoid `linux-firmware-20251125` due to known ROCm regressions.
-- **Container Tooling**:
-  - Fedora: `toolbox` and `podman`
-  - Ubuntu / Debian / Arch: `distrobox` and `podman`
+Every container runs as `gufo`, UID/GID `1000:1000`. The Podman examples use
+`--userns=keep-id:uid=1000,gid=1000` to map the invoking rootless user to that
+account, so writable bind mounts remain usable without changing ownership. Do
+not override the image user for evaluation images: their single-user Nix store
+is owned by `gufo` so tasks can be realized without sudo or a Nix daemon.
 
----
+## Choose an image
 
-## 2. Choosing a Toolbox
+| Image | Use case |
+| :--- | :--- |
+| `gufo-runtime` | Inference, model serving, benchmarks, and diagnostics |
+| `gufo-dev` | C++/HIP development and profiling |
+| `eval-agent` | Evaluate against an existing OpenAI-compatible endpoint |
+| `gufo-eval-agent` | Start Gufo and run the evaluator in one container |
 
-| Toolbox | Image | Use Case |
-| :--- | :--- | :--- |
-| **`gufo-runtime`** | `ghcr.io/gufo-org/toolboxes/gufo-runtime:latest` | Lightweight production inference & model serving (`gufo serve`, `gufo prompt`, `gufo bench`) |
-| **`gufo-dev`** | `ghcr.io/gufo-org/toolboxes/gufo-dev:latest` | Development, C++/HIP kernel tuning, and profiling (`rocprofv3`, Clang, CMake, Ninja) |
-| **`eval-agent`** | `ghcr.io/gufo-org/toolboxes/eval-agent:latest` | Run the coding-agent evaluation against an OpenAI-compatible endpoint you select |
-| **`gufo-eval-agent`** | `ghcr.io/gufo-org/toolboxes/gufo-eval-agent:latest` | Serve a local model with Gufo and run eval-agent against it in one environment |
+Pull all four with:
 
----
-
-## 3. Creating and Entering the Toolbox
-
-### Using `refresh-toolboxes.sh` (Recommended)
-
-The included `refresh-toolboxes.sh` script automatically detects your OS (`toolbox` or `distrobox`) and configures all Strix Halo GPU (`/dev/kfd`, `/dev/dri`) and NPU (`/dev/accel*`) passthroughs:
-
-```bash
-# Pull & create gufo-runtime
-./refresh-toolboxes.sh gufo-runtime
-
-# Or create the development toolbox
-./refresh-toolboxes.sh gufo-dev
-
-# Evaluate an existing endpoint
-./refresh-toolboxes.sh eval-agent
-
-# Start Gufo automatically for a local evaluation
-./refresh-toolboxes.sh gufo-eval-agent
-
-# Or build the image locally from Nix without pulling from GHCR
-./refresh-toolboxes.sh --local gufo-runtime
+```sh
+./refresh-toolboxes.sh all
 ```
 
-### Manual Creation
+## GPU permissions
 
-#### Fedora (`toolbox`)
-```bash
-toolbox create gufo-runtime \
-  --image ghcr.io/gufo-org/toolboxes/gufo-runtime:latest \
-  -- --device /dev/dri --device /dev/kfd --device /dev/accel/accel0 \
-     --group-add video --group-add render --group-add sudo \
-     --security-opt seccomp=unconfined --ulimit memlock=-1
+Pass the host device nodes and their numeric group owners to the container:
 
-toolbox enter gufo-runtime
+```sh
+--userns=keep-id:uid=1000,gid=1000 \
+--device /dev/kfd \
+--device /dev/dri \
+--group-add keep-groups \
+--ulimit memlock=-1
 ```
 
-#### Ubuntu / Debian / Arch (`distrobox`)
-```bash
-distrobox create \
-  --name gufo-runtime \
-  --image ghcr.io/gufo-org/toolboxes/gufo-runtime:latest \
-  --additional-flags "--device /dev/dri --device /dev/kfd --device /dev/accel/accel0 --group-add video --group-add render --group-add sudo --security-opt seccomp=unconfined --ulimit memlock=-1"
+`keep-groups` requires Podman's `crun` OCI runtime and carries the caller's
+existing supplementary groups into the container.
 
-distrobox enter gufo-runtime
+## Run Gufo
+
+```sh
+podman run --rm -it \
+  --userns=keep-id:uid=1000,gid=1000 \
+  --device /dev/kfd \
+  --device /dev/dri \
+  --group-add keep-groups \
+  --ulimit memlock=-1 \
+  -v /path/to/models:/models:ro \
+  ghcr.io/gufo-org/toolboxes/gufo-runtime:latest \
+  gufo bench --model /models/model.gguf -p 512 -n 128
 ```
 
----
+## Evaluate an endpoint
 
-## 4. Verifying Hardware Acceleration
+Use host networking when the endpoint listens on the Linux host's loopback
+interface. The relaxed seccomp policy permits Bubblewrap to create its nested
+sandbox; it does not give the agent unrestricted networking.
 
-Inside the toolbox, run:
+```sh
+mkdir -p results
 
-```bash
-# Verify GPU / NPU hardware diagnostics
-gufo diagnose
+podman run --rm -it \
+  --userns=keep-id:uid=1000,gid=1000 \
+  --network host \
+  --security-opt seccomp=unconfined \
+  -v "$PWD/results:/results" \
+  ghcr.io/gufo-org/toolboxes/eval-agent:latest \
+  eval-agent run sparql-university \
+    --base-url http://127.0.0.1:8080/v1 \
+    --output /results/result.json \
+    --platform strix-halo --engine gufo --backend rocm
 ```
 
----
+## Start Gufo and evaluate it
 
-## 5. Running Inference & Server
+```sh
+mkdir -p results
 
-### Interactive Prompt
-```bash
-gufo prompt --model /path/to/model.gguf -p "Explain quantum computing in simple terms."
+podman run --rm -it \
+  --userns=keep-id:uid=1000,gid=1000 \
+  --device /dev/kfd \
+  --device /dev/dri \
+  --group-add keep-groups \
+  --security-opt seccomp=unconfined \
+  --ulimit memlock=-1 \
+  -v /path/to/models:/models:ro \
+  -v "$PWD/results:/results" \
+  ghcr.io/gufo-org/toolboxes/gufo-eval-agent:latest \
+  eval-agent-with-gufo --model /models/model.gguf -- \
+    run sparql-university \
+    --output /results/result.json \
+    --platform strix-halo --engine gufo --backend rocm
 ```
 
-### Benchmark
-```bash
-gufo bench --model /path/to/model.gguf -p 512 -n 128
-```
-
-### Server
-```bash
-gufo serve --model /path/to/model.gguf --host 0.0.0.0 --port 8080
-```
-
----
-
-## 6. Running Agent Evaluations
-
-Use the eval-only toolbox with any reachable OpenAI-compatible endpoint:
-
-```bash
-toolbox enter eval-agent
-eval-agent run sparql-university \
-  --base-url http://192.168.1.8:8080/v1
-```
-
-Or use the combined toolbox to start and stop Gufo automatically. Options
-before `--` configure the launcher; arguments after `--` are passed unchanged
-to eval-agent.
-
-```bash
-toolbox enter gufo-eval-agent
-eval-agent-with-gufo --model /models/model.gguf -- \
-  run sparql-university \
-  --output /results/result.json \
-  --platform strix-halo --engine gufo --backend rocm
-```
+For Docker, omit `--userns=keep-id:uid=1000,gid=1000`, replace
+`--group-add keep-groups` with numeric `--group-add` flags for the GIDs owning
+the GPU device nodes, and make writable bind mounts accessible to UID 1000.

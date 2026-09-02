@@ -1,6 +1,6 @@
 # Host Configuration Guide for AMD Strix Halo
 
-This document details host-level configuration for running Gufo Toolboxes reliably on AMD Ryzen AI Max ("Strix Halo", `gfx1151` GPU + XDNA2 NPU).
+This document details host-level configuration for running the Gufo Docker and Podman images reliably on AMD Ryzen AI Max ("Strix Halo", `gfx1151` GPU + XDNA2 NPU).
 
 ---
 
