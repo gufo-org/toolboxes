@@ -1,5 +1,26 @@
 {
   "nodes": {
+    "audio-cpp": {
+      "inputs": {
+        "nixpkgs": [
+          "gufo-engine",
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1789940897,
+        "narHash": "sha256-+9tVcd+0TkDxg7JRU7M06Lvm20sXEbuerm62uhm6JKA=",
+        "owner": "0xShug0",
+        "repo": "audio.cpp",
+        "rev": "e3de8e3f3cbfac55ffa58df71426c41550a8598b",
+        "type": "github"
+      },
+      "original": {
+        "owner": "0xShug0",
+        "repo": "audio.cpp",
+        "type": "github"
+      }
+    },
     "eval-agent": {
       "inputs": {
         "flake-utils": "flake-utils",
@@ -41,14 +62,15 @@
     },
     "gufo-engine": {
       "inputs": {
+        "audio-cpp": "audio-cpp",
         "nixpkgs": "nixpkgs"
       },
       "locked": {
-        "lastModified": 1788330064,
-        "narHash": "sha256-6vh/jIDTqbPtg6glHsR80YvY7uYbCmgCORPhPmzevhY=",
+        "lastModified": 1790189794,
+        "narHash": "sha256-jjdyBTzStfIae4maf1iXAvEs4WjSq/wgAsIx/tn2QIs=",
         "owner": "gufo-org",
         "repo": "gufo",
-        "rev": "fb84b0fc0c2cc14b8584cd5620a61f1d23b0c6bf",
+        "rev": "53f8b0a14c2cb71082879d1fc1ca1948957bf8eb",
         "type": "github"
       },
       "original": {
