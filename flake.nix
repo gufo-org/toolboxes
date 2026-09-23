@@ -97,17 +97,20 @@
         chown -R ${toString containerUid}:${toString containerGid} nix/var/nix
       '';
 
-      commonEnv = [
+      commonEnv = system: [
         "PATH=/bin:/usr/bin:/usr/local/bin"
         "LANG=en_US.UTF-8"
         "LC_ALL=en_US.UTF-8"
+        # glibcLocales carries the archive; without this pointer the images
+        # ship a locale they cannot load and every shell warns about it.
+        "LOCALE_ARCHIVE=${pkgs.${system}.glibcLocales}/lib/locale/locale-archive"
         "HOME=/home/gufo"
         "USER=gufo"
         "NIX_REMOTE=local"
         "NIX_PAGER=cat"
       ];
 
-      gpuEnv = system: commonEnv ++ [
+      gpuEnv = system: commonEnv system ++ [
         "ROCM_PATH=${pkgs.${system}.rocmPackages.clr}"
         "HIP_PLATFORM=amd"
       ];
@@ -137,7 +140,8 @@
             gpuEnv = gpuEnv system;
           }))
           (import ./nix/eval-agent.nix (shared // {
-            inherit evaluationAgent evalArchiveOwnershipCommands commonEnv;
+            inherit evaluationAgent evalArchiveOwnershipCommands;
+            commonEnv = commonEnv system;
           }))
           (import ./nix/gufo-eval-agent.nix (shared // {
             inherit engine evaluationAgent evalArchiveOwnershipCommands;

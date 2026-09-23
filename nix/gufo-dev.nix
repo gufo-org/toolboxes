@@ -31,6 +31,9 @@ let
     fakeRootCommands = commonArchiveOwnershipCommands;
     config = {
       Env = gpuEnv ++ [
+        # nixpkgs ships the device-library path in clr's setup-hook, which only
+        # runs inside nix builds; hipcc in the image needs it from the env.
+        "HIP_DEVICE_LIB_PATH=${p.rocmPackages.rocm-device-libs}/amdgcn/bitcode"
         "GUFO_HIPCUB_ROOT=${p.rocmPackages.hipcub}"
         "GUFO_ROCPRIM_ROOT=${p.rocmPackages.rocprim}"
         "GUFO_ROCWMMA_ROOT=${p.rocmPackages.rocwmma}"
