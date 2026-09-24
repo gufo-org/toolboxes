@@ -17,7 +17,7 @@ jobs:
         uses: snok/container-retention-policy@v3.1.0
         with:
           account: gufo-org
-          image-names: "toolboxes/gufo-runtime toolboxes/gufo-dev toolboxes/eval-agent toolboxes/gufo-eval-agent"
+          image-names: "toolboxes/gufo-runtime toolboxes/gufo-dev"
           cut-off: 30d
           keep-n-most-recent: 3
           token: ${{ secrets.GITHUB_TOKEN }}

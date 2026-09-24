@@ -30,8 +30,8 @@ jobs:
             experimental-features = nix-command flakes
             accept-flake-config = true
 
-      - name: Update Gufo and eval-agent inputs
-        run: nix flake update gufo-engine eval-agent
+      - name: Update Gufo input
+        run: nix flake update gufo-engine
 
       - name: Validate updated lock file
         run: nix flake check --no-build
@@ -49,7 +49,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add flake.lock
-          git commit -m "chore(deps): update Gufo and eval-agent"
+          git commit -m "chore(deps): update Gufo"
           git push origin HEAD:main
           echo "changed=true" >> "$GITHUB_OUTPUT"
 

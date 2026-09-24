@@ -4,10 +4,6 @@
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     gufo-engine.url = "github:gufo-org/gufo";
-    eval-agent = {
-      url = "github:gufo-org/eval-agent";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
   };
 
   outputs =
@@ -15,7 +11,6 @@
       self,
       nixpkgs,
       gufo-engine,
-      eval-agent,
     }:
     let
       supportedSystems = [ "x86_64-linux" ];
@@ -92,11 +87,6 @@
         chown -R ${toString containerUid}:${toString containerGid} home/gufo
       '';
 
-      evalArchiveOwnershipCommands = commonArchiveOwnershipCommands + ''
-        chown ${toString containerUid}:${toString containerGid} nix/store
-        chown -R ${toString containerUid}:${toString containerGid} nix/var/nix
-      '';
-
       commonEnv = system: [
         "PATH=/bin:/usr/bin:/usr/local/bin"
         "LANG=en_US.UTF-8"
@@ -120,7 +110,6 @@
         let
           p = pkgs.${system};
           engine = gufo-engine.packages.${system}.default;
-          evaluationAgent = eval-agent.packages.${system}.default;
           shared = {
             inherit
               p
@@ -137,14 +126,6 @@
           }))
           (import ./nix/gufo-dev.nix (shared // {
             inherit engine commonArchiveOwnershipCommands;
-            gpuEnv = gpuEnv system;
-          }))
-          (import ./nix/eval-agent.nix (shared // {
-            inherit evaluationAgent evalArchiveOwnershipCommands;
-            commonEnv = commonEnv system;
-          }))
-          (import ./nix/gufo-eval-agent.nix (shared // {
-            inherit engine evaluationAgent evalArchiveOwnershipCommands;
             gpuEnv = gpuEnv system;
           }))
         ]

@@ -6,12 +6,10 @@ set -euo pipefail
 declare -A IMAGES
 IMAGES["gufo-runtime"]="ghcr.io/gufo-org/toolboxes/gufo-runtime:latest"
 IMAGES["gufo-dev"]="ghcr.io/gufo-org/toolboxes/gufo-dev:latest"
-IMAGES["eval-agent"]="ghcr.io/gufo-org/toolboxes/eval-agent:latest"
-IMAGES["gufo-eval-agent"]="ghcr.io/gufo-org/toolboxes/gufo-eval-agent:latest"
 
 usage() {
   cat <<EOF
-Usage: $0 [all|gufo-runtime|gufo-dev|eval-agent|gufo-eval-agent]
+Usage: $0 [all|gufo-runtime|gufo-dev]
 
 Pull Gufo images with Podman or Docker. This repository does not support
 Toolbx or Distrobox; run images directly with your container engine.
@@ -33,7 +31,7 @@ esac
 target="$1"
 selected_images=()
 if [[ "$target" == "all" ]]; then
-  selected_images=("gufo-runtime" "gufo-dev" "eval-agent" "gufo-eval-agent")
+  selected_images=("gufo-runtime" "gufo-dev")
 elif [[ -v IMAGES["$target"] ]]; then
   selected_images=("$target")
 else
