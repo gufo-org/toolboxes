@@ -42,6 +42,23 @@ Pass the host device nodes and their numeric group owners to the container:
 `keep-groups` requires Podman's `crun` OCI runtime and carries the caller's
 existing supplementary groups into the container.
 
+Docker supports neither flag. Drop `--userns=keep-id:uid=1000,gid=1000` and
+pass the numeric group owner of the device nodes instead:
+
+```sh
+gpu_gid=$(stat -c '%g' /dev/kfd)
+
+--device /dev/kfd \
+--device /dev/dri \
+--group-add "$gpu_gid" \
+--ulimit memlock=-1
+```
+
+On most hosts `/dev/kfd` and `/dev/dri/renderD*` share one group; check both
+with `stat -c '%g'` and pass a `--group-add` for each distinct GID. Writable
+bind mounts must be accessible to UID 1000, and files the container creates
+are owned by `1000:1000` on the host.
+
 ## Run Gufo
 
 ```sh

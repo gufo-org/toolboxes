@@ -25,7 +25,7 @@ the caller's supplementary GPU groups into the container.
 For Docker, omit `--userns=keep-id:uid=1000,gid=1000`, replace
 `--group-add keep-groups` with numeric `--group-add` options for the GIDs owning
 `/dev/kfd` and the AMD render node, and ensure writable bind mounts permit UID
-1000.
+1000. See [Docker](#docker) for complete commands.
 
 ## Pull
 
@@ -76,11 +76,87 @@ podman run --rm -it \
   ghcr.io/gufo-org/toolboxes/gufo-dev:latest
 ```
 
+## Docker
+
+Docker has no `keep-id` user namespace and no `keep-groups`, so pass the
+numeric GID that owns the GPU device nodes and make writable bind mounts
+accessible to UID 1000:
+
+```sh
+gpu_gid=$(stat -c '%g' /dev/kfd)
+
+docker run --rm -it \
+  --device /dev/kfd \
+  --device /dev/dri \
+  --group-add "$gpu_gid" \
+  --ulimit memlock=-1 \
+  -v /path/to/models:/models:ro \
+  ghcr.io/gufo-org/toolboxes/gufo-runtime:latest \
+  gufo diagnose
+```
+
+`diagnose` should report `gfx1151` and a loaded `amdgpu` driver. Run a prompt
+or serve the OpenAI-compatible API with the same flags:
+
+```sh
+docker run --rm -it \
+  --device /dev/kfd --device /dev/dri --group-add "$gpu_gid" \
+  --ulimit memlock=-1 \
+  -v /path/to/models:/models:ro \
+  ghcr.io/gufo-org/toolboxes/gufo-runtime:latest \
+  gufo prompt --model /models/model.gguf --prompt "Hello" --max-tokens 128
+
+docker run --rm -p 8080:8080 \
+  --device /dev/kfd --device /dev/dri --group-add "$gpu_gid" \
+  --ulimit memlock=-1 \
+  -v /path/to/models:/models:ro \
+  ghcr.io/gufo-org/toolboxes/gufo-runtime:latest \
+  gufo serve --model /models/model.gguf --host 0.0.0.0 --port 8080
+```
+
+The served model name comes from the GGUF, not from the file path; read it
+from `/v1/models` and send that exact id in chat requests.
+
+Hugging Face cache directories store their GGUFs as symlinks into
+`blobs/`, so mount the repository root and reference the model through
+`snapshots/<revision>/`. Mounting a snapshot directory alone leaves the
+symlinks dangling and the model fails to open:
+
+```sh
+docker run --rm \
+  --device /dev/kfd --device /dev/dri --group-add "$gpu_gid" \
+  --ulimit memlock=-1 \
+  -v /path/to/models--org--repo:/models:ro \
+  ghcr.io/gufo-org/toolboxes/gufo-runtime:latest \
+  gufo prompt --model /models/snapshots/<revision>/model.gguf --prompt "Hello"
+```
+
+For the development image, mount the checkout and start the default shell.
+`hipcc` and CMake projects using `LANGUAGES HIP` compile for `gfx1151` without
+extra flags:
+
+```sh
+docker run --rm -it \
+  --device /dev/kfd \
+  --device /dev/dri \
+  --group-add "$gpu_gid" \
+  --ulimit memlock=-1 \
+  -v "$PWD:/workspace" \
+  -w /workspace \
+  ghcr.io/gufo-org/toolboxes/gufo-dev:latest
+```
+
+Bind mounts written by the container are owned by UID/GID `1000:1000` on the
+host, because Docker maps the container user directly.
+
 ## Build locally with Nix
 
 ```sh
 nix run .#stream-gufo-runtime | podman load
 nix run .#stream-gufo-dev | podman load
+
+# Docker loads the same streams.
+nix run .#stream-gufo-runtime | docker load
 
 nix build .#packages.x86_64-linux.gufo-runtime-image
 ```
