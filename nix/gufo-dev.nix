@@ -30,6 +30,9 @@ let
     extraCommands = ociFilesystemCommands;
     fakeRootCommands = commonArchiveOwnershipCommands;
     config = {
+      Labels = {
+        "org.opencontainers.image.source" = "https://github.com/gufo-org/toolboxes";
+      };
       Env = gpuEnv ++ [
         # nixpkgs ships the device-library path in clr's setup-hook, which only
         # runs inside nix builds; hipcc in the image needs it from the env.

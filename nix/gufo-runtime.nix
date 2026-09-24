@@ -18,6 +18,9 @@ let
     extraCommands = ociFilesystemCommands;
     fakeRootCommands = commonArchiveOwnershipCommands;
     config = {
+      Labels = {
+        "org.opencontainers.image.source" = "https://github.com/gufo-org/toolboxes";
+      };
       Env = gpuEnv;
       Cmd = [ "/bin/bash" ];
       User = containerUser;
