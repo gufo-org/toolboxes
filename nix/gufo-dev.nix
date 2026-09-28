@@ -13,6 +13,9 @@
 let
   packageSuffix = if variant == null then "" else "-${variant}";
 
+  prefixPath = packages:
+    p.lib.concatMapStringsSep ":" (pkg: "${pkg}") packages;
+
   # Gufo's hosted PR check configures CMake with these inputs plus the shared
   # libraries it finds with find_package(). The published image carried only the
   # runtime outputs of those libraries, so configuring a source tree inside it
@@ -34,17 +37,35 @@ let
     p.openssl
     p.libpng
     p.libjpeg
+    # FindPNG resolves PNG_LIBRARY through ZLIB_INCLUDE_DIR, so a PNG build
+    # fails as "Could NOT find ZLIB" before it reports anything about libpng.
+    p.zlib
   ];
-  libraryDevPackages = map p.lib.getDev libraryPackages;
+
+  # A multi-output package interpolates to its *first* output, and for
+  # libjpeg-turbo, curl and OpenSSL that is `bin`, not the output carrying
+  # `lib/libjpeg.so`. Expanding every output is what makes find_library()
+  # resolve the `-l` names instead of reporting "found version 62" with no
+  # library.
+  outputsOf = pkg: builtins.map (name: pkg.${name}) (pkg.outputs or [ "out" ]);
+  libraryOutputs = builtins.concatMap outputsOf libraryPackages;
+  libraryDevPackages = builtins.map p.lib.getDev libraryPackages;
+  libraryPrefixes = libraryOutputs ++ libraryDevPackages;
 
   # Nix exports these search paths through per-package setup hooks, which run in
   # `nix build` and `nix develop` but never inside a started container. The
   # equivalent paths are baked into the image configuration instead.
+  #
+  # `pkg-config --libs libcurl` still warns about curl's private requirements
+  # (libidn2, brotli, zstd, krb5, libpsl, libssh2, nghttp2/3, ngtcp2) because
+  # only their runtime libraries, not their `.pc` files, are in this closure.
+  # CMake's find_package(CURL) is unaffected, and listing ten transitive
+  # dependencies here would need updating whenever curl changes.
   buildEnv = [
-    "CMAKE_PREFIX_PATH=${p.lib.concatMapStringsSep ":" (drv: "${drv}") libraryDevPackages}"
+    "CMAKE_PREFIX_PATH=${prefixPath libraryPrefixes}"
     "CPATH=${p.lib.makeSearchPath "include" libraryDevPackages}"
-    "LIBRARY_PATH=${p.lib.makeSearchPath "lib" (libraryPackages ++ libraryDevPackages)}"
-    "PKG_CONFIG_PATH=${p.lib.makeSearchPath "lib/pkgconfig" (libraryPackages ++ libraryDevPackages)}"
+    "LIBRARY_PATH=${p.lib.makeSearchPath "lib" libraryPrefixes}"
+    "PKG_CONFIG_PATH=${p.lib.makeSearchPath "lib/pkgconfig" libraryPrefixes}"
   ];
 
   imageArgs = {
@@ -67,7 +88,7 @@ let
       p.rocmPackages.rocwmma
     ]
     ++ buildPackages
-    ++ libraryPackages
+    ++ libraryOutputs
     ++ libraryDevPackages
     ++ commonRuntimePkgs;
     extraCommands = ociFilesystemCommands;
