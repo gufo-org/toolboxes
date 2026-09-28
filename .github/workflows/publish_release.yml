@@ -1,0 +1,129 @@
+name: Publish Stable Gufo OCI Images
+
+on:
+  repository_dispatch:
+    types:
+      - gufo-release
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Gufo release tag, for example v0.2.0
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: publish-stable-${{ github.event.client_payload.tag || inputs.tag }}
+  cancel-in-progress: false
+
+env:
+  IMAGE_PREFIX: ghcr.io/${{ github.repository }}
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.release.outputs.tag }}
+      version: ${{ steps.release.outputs.version }}
+      series: ${{ steps.release.outputs.series }}
+    steps:
+      - name: Validate release tag
+        id: release
+        env:
+          RELEASE_TAG: ${{ github.event.client_payload.tag || inputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! "$RELEASE_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo "Expected a Gufo release tag like v0.2.0, got: $RELEASE_TAG" >&2
+            exit 1
+          fi
+
+          version="${RELEASE_TAG#v}"
+          {
+            echo "tag=${RELEASE_TAG}"
+            echo "version=${version}"
+            echo "series=${version%.*}"
+          } >> "$GITHUB_OUTPUT"
+
+  build-and-push:
+    needs: prepare
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - gufo-runtime
+          - gufo-dev
+    env:
+      RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+      RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+      RELEASE_SERIES: ${{ needs.prepare.outputs.series }}
+    steps:
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache
+          sudo docker system prune --all --force
+          df -h
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v31.11.1
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+            accept-flake-config = true
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify Gufo release identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          gufo_input="github:gufo-org/gufo/${RELEASE_TAG}"
+          actual_version=$(nix eval --raw "${gufo_input}#lib.releaseVersion")
+          if [[ "$actual_version" != "$RELEASE_VERSION" ]]; then
+            echo "Tag ${RELEASE_TAG} reports version ${actual_version}, expected ${RELEASE_VERSION}" >&2
+            exit 1
+          fi
+
+      - name: Publish stable image tags
+        shell: bash
+        run: |
+          set -euo pipefail
+          image_name="${{ env.IMAGE_PREFIX }}/${{ matrix.target }}"
+          exact_image="${image_name}:${RELEASE_VERSION}"
+          gufo_input="github:gufo-org/gufo/${RELEASE_TAG}"
+
+          if docker manifest inspect "$exact_image" >/dev/null 2>&1; then
+            echo "Using existing immutable image ${exact_image}."
+            docker pull "$exact_image"
+            publish_exact=false
+          else
+            nix build \
+              --override-input gufo-engine "$gufo_input" \
+              ".#packages.x86_64-linux.${{ matrix.target }}-release-image" \
+              --out-link "result-${{ matrix.target }}"
+            docker load < "result-${{ matrix.target }}"
+            publish_exact=true
+          fi
+
+          docker run --rm "$exact_image" gufo --version \
+            | grep -F "gufo version ${RELEASE_VERSION} ("
+          if [[ "$publish_exact" == true ]]; then
+            docker push "$exact_image"
+          fi
+          docker tag "$exact_image" "${image_name}:${RELEASE_SERIES}"
+          docker tag "$exact_image" "${image_name}:latest"
+          docker push "${image_name}:${RELEASE_SERIES}"
+          docker push "${image_name}:latest"
