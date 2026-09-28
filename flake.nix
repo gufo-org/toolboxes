@@ -21,15 +21,17 @@
       containerUser = "${toString containerUid}:${toString containerGid}";
       toolboxesRevision = self.rev or self.dirtyRev or "unknown";
       gufoRevision = gufo-engine.rev or "unknown";
-      edgeImage = {
-        imageTag = "edge";
+      imageMetadata = version: {
+        imageTag = version;
         imageLabels = {
-          "org.opencontainers.image.version" = "edge";
+          "org.opencontainers.image.version" = version;
           "org.opencontainers.image.revision" = toolboxesRevision;
           "org.opencontainers.image.source" = "https://github.com/gufo-org/toolboxes";
           "org.gufo.engine.revision" = gufoRevision;
         };
       };
+      edgeImage = imageMetadata "edge";
+      releaseImage = imageMetadata gufo-engine.lib.releaseVersion;
 
       commonRuntimePkgs =
         system:
@@ -120,7 +122,6 @@
         system:
         let
           p = pkgs.${system};
-          engine = gufo-engine.packages.${system}.default;
           shared = {
             inherit
               p
@@ -129,17 +130,21 @@
               ;
             commonRuntimePkgs = commonRuntimePkgs system;
           };
+          modules =
+            variant: image: engine:
+            [
+              (import ./nix/gufo-runtime.nix (shared // image // {
+                inherit engine commonArchiveOwnershipCommands variant;
+                gpuEnv = gpuEnv system;
+              }))
+              (import ./nix/gufo-dev.nix (shared // image // {
+                inherit engine commonArchiveOwnershipCommands variant;
+                gpuEnv = gpuEnv system;
+              }))
+            ];
         in
-        [
-          (import ./nix/gufo-runtime.nix (shared // edgeImage // {
-            inherit engine commonArchiveOwnershipCommands;
-            gpuEnv = gpuEnv system;
-          }))
-          (import ./nix/gufo-dev.nix (shared // edgeImage // {
-            inherit engine commonArchiveOwnershipCommands;
-            gpuEnv = gpuEnv system;
-          }))
-        ]
+        modules null edgeImage gufo-engine.packages.${system}.default
+        ++ modules "release" releaseImage gufo-engine.packages.${system}.release
       );
     in
     {

@@ -17,10 +17,10 @@ Toolbx and Distrobox are not supported. The containers run as the dedicated
 | `gufo-runtime` | `ghcr.io/gufo-org/toolboxes/gufo-runtime:edge` | Gufo inference, serving, benchmarks, and diagnostics |
 | `gufo-dev` | `ghcr.io/gufo-org/toolboxes/gufo-dev:edge` | C++/HIP development, profiling, and kernel tuning |
 
-`edge` follows the Gufo revision pinned by the daily dependency update. Each
-edge build is also published as the immutable
-`sha-<full-gufo-revision>` tag. The `latest` tag is reserved for stable Gufo
-releases and is never advanced by the rolling dependency update.
+Stable releases publish immutable `X.Y.Z` tags plus the floating `X.Y` and
+`latest` aliases. The rolling `edge` channel follows the Gufo revision pinned
+by the daily dependency update and also publishes an immutable
+`sha-<full-gufo-revision>` tag. Rolling updates never advance `latest`.
 
 The examples use rootless Podman with `crun`. `--userns=keep-id:uid=1000,gid=1000`
 maps the invoking host user to the image's `gufo` account, so writable bind
@@ -36,6 +36,9 @@ For Docker, omit `--userns=keep-id:uid=1000,gid=1000`, replace
 
 ```sh
 ./refresh-toolboxes.sh all
+
+# Or select the stable channel after a Gufo release is published.
+./refresh-toolboxes.sh all latest
 
 # Or pull one image directly.
 podman pull ghcr.io/gufo-org/toolboxes/gufo-runtime:edge

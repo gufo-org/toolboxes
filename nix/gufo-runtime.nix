@@ -8,8 +8,10 @@
   gpuEnv,
   imageTag,
   imageLabels,
+  variant ? null,
 }:
 let
+  packageSuffix = if variant == null then "" else "-${variant}";
   imageArgs = {
     name = "ghcr.io/gufo-org/toolboxes/gufo-runtime";
     tag = imageTag;
@@ -33,11 +35,11 @@ let
 in
 {
   packages = {
-    gufo-runtime-image = image;
-    stream-gufo-runtime = stream;
+    "gufo-runtime${packageSuffix}-image" = image;
+    "stream-gufo-runtime${packageSuffix}" = stream;
   };
 
-  apps.stream-gufo-runtime = {
+  apps."stream-gufo-runtime${packageSuffix}" = {
     type = "app";
     program = "${stream}";
   };

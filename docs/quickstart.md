@@ -27,9 +27,9 @@ Pull both with:
 ./refresh-toolboxes.sh all
 ```
 
-The `edge` tag follows the daily Gufo dependency update. Every edge image also
-has an immutable `sha-<full-gufo-revision>` tag; `latest` is reserved for stable
-releases.
+Stable releases publish immutable `X.Y.Z` tags plus floating `X.Y` and `latest`
+aliases. Use `./refresh-toolboxes.sh all latest` for the stable channel. The
+default edge image also has an immutable `sha-<full-gufo-revision>` tag.
 
 ## GPU permissions
 

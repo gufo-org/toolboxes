@@ -4,19 +4,20 @@ set -euo pipefail
 # Pull the published Gufo OCI images with Podman (preferred) or Docker.
 
 declare -A IMAGES
-IMAGES["gufo-runtime"]="ghcr.io/gufo-org/toolboxes/gufo-runtime:edge"
-IMAGES["gufo-dev"]="ghcr.io/gufo-org/toolboxes/gufo-dev:edge"
+IMAGES["gufo-runtime"]="ghcr.io/gufo-org/toolboxes/gufo-runtime"
+IMAGES["gufo-dev"]="ghcr.io/gufo-org/toolboxes/gufo-dev"
 
 usage() {
   cat <<EOF
-Usage: $0 [all|gufo-runtime|gufo-dev]
+Usage: $0 [all|gufo-runtime|gufo-dev] [latest|edge]
 
-Pull the rolling Gufo edge images with Podman or Docker. This repository does
-not support Toolbx or Distrobox; run images directly with your container engine.
+Pull rolling Gufo edge images by default or select the stable latest channel.
+This repository does not support Toolbx or Distrobox; run images directly with
+your container engine.
 EOF
 }
 
-if [[ $# -ne 1 ]]; then
+if [[ $# -lt 1 || $# -gt 2 ]]; then
   usage >&2
   exit 2
 fi
@@ -29,6 +30,13 @@ case "$1" in
 esac
 
 target="$1"
+channel="${2:-edge}"
+if [[ "$channel" != "latest" && "$channel" != "edge" ]]; then
+  echo "Unknown channel: $channel" >&2
+  usage >&2
+  exit 2
+fi
+
 selected_images=()
 if [[ "$target" == "all" ]]; then
   selected_images=("gufo-runtime" "gufo-dev")
@@ -50,7 +58,7 @@ else
 fi
 
 for image_name in "${selected_images[@]}"; do
-  image_ref="${IMAGES[$image_name]}"
+  image_ref="${IMAGES[$image_name]}:${channel}"
   echo "Pulling $image_ref with $container_engine..."
   "$container_engine" pull "$image_ref"
 done
