@@ -14,8 +14,13 @@ Toolbx and Distrobox are not supported. The containers run as the dedicated
 
 | Image | Reference | Purpose |
 | :--- | :--- | :--- |
-| `gufo-runtime` | `ghcr.io/gufo-org/toolboxes/gufo-runtime:latest` | Gufo inference, serving, benchmarks, and diagnostics |
-| `gufo-dev` | `ghcr.io/gufo-org/toolboxes/gufo-dev:latest` | C++/HIP development, profiling, and kernel tuning |
+| `gufo-runtime` | `ghcr.io/gufo-org/toolboxes/gufo-runtime:edge` | Gufo inference, serving, benchmarks, and diagnostics |
+| `gufo-dev` | `ghcr.io/gufo-org/toolboxes/gufo-dev:edge` | C++/HIP development, profiling, and kernel tuning |
+
+`edge` follows the Gufo revision pinned by the daily dependency update. Each
+edge build is also published as the immutable
+`sha-<full-gufo-revision>` tag. The `latest` tag is reserved for stable Gufo
+releases and is never advanced by the rolling dependency update.
 
 The examples use rootless Podman with `crun`. `--userns=keep-id:uid=1000,gid=1000`
 maps the invoking host user to the image's `gufo` account, so writable bind
@@ -33,7 +38,7 @@ For Docker, omit `--userns=keep-id:uid=1000,gid=1000`, replace
 ./refresh-toolboxes.sh all
 
 # Or pull one image directly.
-podman pull ghcr.io/gufo-org/toolboxes/gufo-runtime:latest
+podman pull ghcr.io/gufo-org/toolboxes/gufo-runtime:edge
 ```
 
 ## Gufo runtime
@@ -49,7 +54,7 @@ podman run --rm -it \
   --group-add keep-groups \
   --ulimit memlock=-1 \
   -v /path/to/models:/models:ro \
-  ghcr.io/gufo-org/toolboxes/gufo-runtime:latest \
+  ghcr.io/gufo-org/toolboxes/gufo-runtime:edge \
   gufo diagnose
 ```
 
@@ -73,7 +78,7 @@ podman run --rm -it \
   --ulimit memlock=-1 \
   -v "$PWD:/workspace" \
   -w /workspace \
-  ghcr.io/gufo-org/toolboxes/gufo-dev:latest
+  ghcr.io/gufo-org/toolboxes/gufo-dev:edge
 ```
 
 ## Docker
@@ -91,7 +96,7 @@ docker run --rm -it \
   --group-add "$gpu_gid" \
   --ulimit memlock=-1 \
   -v /path/to/models:/models:ro \
-  ghcr.io/gufo-org/toolboxes/gufo-runtime:latest \
+  ghcr.io/gufo-org/toolboxes/gufo-runtime:edge \
   gufo diagnose
 ```
 
@@ -103,14 +108,14 @@ docker run --rm -it \
   --device /dev/kfd --device /dev/dri --group-add "$gpu_gid" \
   --ulimit memlock=-1 \
   -v /path/to/models:/models:ro \
-  ghcr.io/gufo-org/toolboxes/gufo-runtime:latest \
+  ghcr.io/gufo-org/toolboxes/gufo-runtime:edge \
   gufo prompt --model /models/model.gguf --prompt "Hello" --max-tokens 128
 
 docker run --rm -p 8080:8080 \
   --device /dev/kfd --device /dev/dri --group-add "$gpu_gid" \
   --ulimit memlock=-1 \
   -v /path/to/models:/models:ro \
-  ghcr.io/gufo-org/toolboxes/gufo-runtime:latest \
+  ghcr.io/gufo-org/toolboxes/gufo-runtime:edge \
   gufo serve --model /models/model.gguf --host 0.0.0.0 --port 8080
 ```
 
@@ -127,7 +132,7 @@ docker run --rm \
   --device /dev/kfd --device /dev/dri --group-add "$gpu_gid" \
   --ulimit memlock=-1 \
   -v /path/to/models--org--repo:/models:ro \
-  ghcr.io/gufo-org/toolboxes/gufo-runtime:latest \
+  ghcr.io/gufo-org/toolboxes/gufo-runtime:edge \
   gufo prompt --model /models/snapshots/<revision>/model.gguf --prompt "Hello"
 ```
 
@@ -143,7 +148,7 @@ docker run --rm -it \
   --ulimit memlock=-1 \
   -v "$PWD:/workspace" \
   -w /workspace \
-  ghcr.io/gufo-org/toolboxes/gufo-dev:latest
+  ghcr.io/gufo-org/toolboxes/gufo-dev:edge
 ```
 
 Bind mounts written by the container are owned by UID/GID `1000:1000` on the

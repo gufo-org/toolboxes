@@ -27,6 +27,10 @@ Pull both with:
 ./refresh-toolboxes.sh all
 ```
 
+The `edge` tag follows the daily Gufo dependency update. Every edge image also
+has an immutable `sha-<full-gufo-revision>` tag; `latest` is reserved for stable
+releases.
+
 ## GPU permissions
 
 Pass the host device nodes and their numeric group owners to the container:
@@ -69,7 +73,7 @@ podman run --rm -it \
   --group-add keep-groups \
   --ulimit memlock=-1 \
   -v /path/to/models:/models:ro \
-  ghcr.io/gufo-org/toolboxes/gufo-runtime:latest \
+  ghcr.io/gufo-org/toolboxes/gufo-runtime:edge \
   gufo bench --model /models/model.gguf -p 512 -n 128
 ```
 

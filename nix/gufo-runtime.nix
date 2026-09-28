@@ -6,11 +6,13 @@
   commonArchiveOwnershipCommands,
   containerUser,
   gpuEnv,
+  imageTag,
+  imageLabels,
 }:
 let
   imageArgs = {
     name = "ghcr.io/gufo-org/toolboxes/gufo-runtime";
-    tag = "latest";
+    tag = imageTag;
     contents = [
       engine
       p.radeontop
@@ -18,9 +20,7 @@ let
     extraCommands = ociFilesystemCommands;
     fakeRootCommands = commonArchiveOwnershipCommands;
     config = {
-      Labels = {
-        "org.opencontainers.image.source" = "https://github.com/gufo-org/toolboxes";
-      };
+      Labels = imageLabels;
       Env = gpuEnv;
       Cmd = [ "/bin/bash" ];
       User = containerUser;
