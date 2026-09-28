@@ -1,0 +1,133 @@
+name: Verify Dev Image Build Environment
+
+# Gufo can be built and tested inside the dev image only if that image carries a
+# working compiler, the Python gate runners and the development outputs of every
+# library Gufo finds with find_package(). `nix flake check` cannot observe this:
+# the image is a closure of files until someone configures CMake inside it. This
+# workflow builds the image and runs Gufo's hosted contract suite in it, so the
+# capability is checked rather than assumed.
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: verify-dev-image-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GUFO_CHECKOUT: gufo
+
+jobs:
+  build-environment:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache
+          sudo docker system prune --all --force
+          df -h
+
+      - name: Checkout toolboxes
+        uses: actions/checkout@v4
+
+      - name: Resolve the pinned revisions
+        id: pins
+        shell: bash
+        run: |
+          echo "gufo=$(jq -er '.nodes["gufo-engine"].locked.rev' flake.lock)" >> "$GITHUB_OUTPUT"
+          echo "toolboxes_nixpkgs=$(jq -er '.nodes.nixpkgs.locked.rev' flake.lock)" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout pinned Gufo
+        uses: actions/checkout@v4
+        with:
+          repository: gufo-org/gufo
+          ref: ${{ steps.pins.outputs.gufo }}
+          path: ${{ env.GUFO_CHECKOUT }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Compare pinned nixpkgs revisions
+        shell: bash
+        run: |
+          gufo_nixpkgs=$(jq -er '.nodes.nixpkgs.locked.rev' '${{ env.GUFO_CHECKOUT }}'/flake.lock)
+          toolboxes_nixpkgs='${{ steps.pins.outputs.toolboxes_nixpkgs }}'
+          {
+            echo "### nixpkgs pins"
+            echo
+            echo "| Repository | nixpkgs revision |"
+            echo "| :--- | :--- |"
+            echo "| Gufo | \`$gufo_nixpkgs\` |"
+            echo "| toolboxes | \`$toolboxes_nixpkgs\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$gufo_nixpkgs" != "$toolboxes_nixpkgs" ]; then
+            echo "::warning::Gufo pins nixpkgs $gufo_nixpkgs but this image builds with $toolboxes_nixpkgs."
+            echo "::warning::clang-format and GCC versions can then differ from Gufo's hosted gate; run nix flake update nixpkgs to realign."
+          fi
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v31.11.1
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+            accept-flake-config = true
+
+      - name: Build the dev image
+        run: nix build .#packages.x86_64-linux.gufo-dev-image --out-link result-gufo-dev
+
+      - name: Load the image
+        shell: bash
+        run: |
+          reference=$(docker load -i result-gufo-dev | sed -n 's/^Loaded image: //p' | head -1)
+          if [ -z "$reference" ]; then
+            echo "::error::docker load did not report an image reference"
+            exit 1
+          fi
+          echo "IMAGE_REF=$reference" >> "$GITHUB_ENV"
+          echo "Loaded $reference"
+
+      - name: Check the image build environment
+        shell: bash
+        run: |
+          docker run --rm \
+            -v "$PWD:/workspace/toolboxes:ro" \
+            -w /workspace/toolboxes \
+            "$IMAGE_REF" bash tests/dev-image-check.sh
+
+      - name: Configure Gufo inside the image
+        shell: bash
+        run: |
+          docker run --rm \
+            -v "$PWD/${{ env.GUFO_CHECKOUT }}:/workspace/gufo" \
+            -w /workspace/gufo \
+            "$IMAGE_REF" cmake --preset cpu-test
+
+      - name: Build and run Gufo's hosted contract suite
+        shell: bash
+        run: |
+          docker run --rm \
+            -v "$PWD/${{ env.GUFO_CHECKOUT }}:/workspace/gufo" \
+            -w /workspace/gufo \
+            "$IMAGE_REF" cmake --build --preset pr
+
+      - name: Run Gufo's repository gates
+        shell: bash
+        run: |
+          docker run --rm \
+            -v "$PWD/${{ env.GUFO_CHECKOUT }}:/workspace/gufo" \
+            -w /workspace/gufo \
+            "$IMAGE_REF" python3 tools/ci/check-format.py
+          docker run --rm \
+            -v "$PWD/${{ env.GUFO_CHECKOUT }}:/workspace/gufo" \
+            -w /workspace/gufo \
+            "$IMAGE_REF" python3 tools/ci/check-docs.py --root .
+          docker run --rm \
+            -v "$PWD/${{ env.GUFO_CHECKOUT }}:/workspace/gufo" \
+            -w /workspace/gufo \
+            "$IMAGE_REF" python3 tools/ci/check-dependencies.py
