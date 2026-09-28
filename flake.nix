@@ -19,6 +19,17 @@
       containerUid = 1000;
       containerGid = 1000;
       containerUser = "${toString containerUid}:${toString containerGid}";
+      toolboxesRevision = self.rev or self.dirtyRev or "unknown";
+      gufoRevision = gufo-engine.rev or "unknown";
+      edgeImage = {
+        imageTag = "edge";
+        imageLabels = {
+          "org.opencontainers.image.version" = "edge";
+          "org.opencontainers.image.revision" = toolboxesRevision;
+          "org.opencontainers.image.source" = "https://github.com/gufo-org/toolboxes";
+          "org.gufo.engine.revision" = gufoRevision;
+        };
+      };
 
       commonRuntimePkgs =
         system:
@@ -120,11 +131,11 @@
           };
         in
         [
-          (import ./nix/gufo-runtime.nix (shared // {
+          (import ./nix/gufo-runtime.nix (shared // edgeImage // {
             inherit engine commonArchiveOwnershipCommands;
             gpuEnv = gpuEnv system;
           }))
-          (import ./nix/gufo-dev.nix (shared // {
+          (import ./nix/gufo-dev.nix (shared // edgeImage // {
             inherit engine commonArchiveOwnershipCommands;
             gpuEnv = gpuEnv system;
           }))

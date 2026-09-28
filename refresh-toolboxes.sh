@@ -4,15 +4,15 @@ set -euo pipefail
 # Pull the published Gufo OCI images with Podman (preferred) or Docker.
 
 declare -A IMAGES
-IMAGES["gufo-runtime"]="ghcr.io/gufo-org/toolboxes/gufo-runtime:latest"
-IMAGES["gufo-dev"]="ghcr.io/gufo-org/toolboxes/gufo-dev:latest"
+IMAGES["gufo-runtime"]="ghcr.io/gufo-org/toolboxes/gufo-runtime:edge"
+IMAGES["gufo-dev"]="ghcr.io/gufo-org/toolboxes/gufo-dev:edge"
 
 usage() {
   cat <<EOF
 Usage: $0 [all|gufo-runtime|gufo-dev]
 
-Pull Gufo images with Podman or Docker. This repository does not support
-Toolbx or Distrobox; run images directly with your container engine.
+Pull the rolling Gufo edge images with Podman or Docker. This repository does
+not support Toolbx or Distrobox; run images directly with your container engine.
 EOF
 }
 

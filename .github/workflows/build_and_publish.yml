@@ -80,17 +80,18 @@ jobs:
       - name: Load and Push image to GHCR
         run: |
           set -euo pipefail
-          BUILD_TS=$(date +%Y%m%dT%H%M%S)
           IMAGE_NAME="${{ env.IMAGE_PREFIX }}/${{ matrix.target }}"
+          GUFO_REVISION=$(jq -er '.nodes["gufo-engine"].locked.rev' flake.lock)
+          IMMUTABLE_TAG="sha-${GUFO_REVISION}"
 
           echo "📥 Loading image into Docker daemon..."
           docker load < result-${{ matrix.target }}
 
           echo "🏷️ Tagging image..."
-          docker tag "${IMAGE_NAME}:latest" "${IMAGE_NAME}:${BUILD_TS}"
+          docker tag "${IMAGE_NAME}:edge" "${IMAGE_NAME}:${IMMUTABLE_TAG}"
 
-          echo "🚀 Pushing latest..."
-          docker push "${IMAGE_NAME}:latest"
+          echo "🚀 Pushing edge..."
+          docker push "${IMAGE_NAME}:edge"
 
-          echo "🚀 Pushing immutable timestamp tag ${BUILD_TS}..."
-          docker push "${IMAGE_NAME}:${BUILD_TS}"
+          echo "🚀 Pushing immutable Gufo revision tag ${IMMUTABLE_TAG}..."
+          docker push "${IMAGE_NAME}:${IMMUTABLE_TAG}"

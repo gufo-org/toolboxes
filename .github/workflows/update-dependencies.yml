@@ -7,8 +7,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  actions: write
-  contents: write
+  contents: read
 
 concurrency:
   group: update-gufo-dependencies
@@ -18,10 +17,19 @@ jobs:
   update:
     runs-on: ubuntu-latest
     steps:
+      - name: Create release app token
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
+
       - name: Checkout main
         uses: actions/checkout@v4
         with:
           ref: main
+          token: ${{ steps.app-token.outputs.token }}
 
       - name: Install Nix
         uses: cachix/install-nix-action@v31.11.1
@@ -37,12 +45,10 @@ jobs:
         run: nix flake check --no-build
 
       - name: Commit and push lock-file changes
-        id: commit
         shell: bash
         run: |
           if git diff --quiet -- flake.lock; then
             echo "No dependency updates available."
-            echo "changed=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
@@ -51,10 +57,3 @@ jobs:
           git add flake.lock
           git commit -m "chore(deps): update Gufo"
           git push origin HEAD:main
-          echo "changed=true" >> "$GITHUB_OUTPUT"
-
-      - name: Build updated images
-        if: steps.commit.outputs.changed == 'true'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: gh workflow run build_and_publish.yml --ref main -f images=all
