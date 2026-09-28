@@ -100,21 +100,17 @@ jobs:
             -w /workspace/toolboxes \
             "$IMAGE_REF" bash tests/dev-image-check.sh
 
-      - name: Configure Gufo inside the image
+      # Gufo is copied into the container instead of built through a bind mount:
+      # the image pins UID 1000, and a runner whose daemon remaps container UIDs
+      # makes that mount readable but not writable, which CMake reports as an
+      # unwritable binaryDir rather than as the permission problem it is.
+      - name: Configure, build and test Gufo inside the image
         shell: bash
         run: |
           docker run --rm \
-            -v "$PWD/${{ env.GUFO_CHECKOUT }}:/workspace/gufo" \
-            -w /workspace/gufo \
-            "$IMAGE_REF" cmake --preset cpu-test
-
-      - name: Build and run Gufo's hosted contract suite
-        shell: bash
-        run: |
-          docker run --rm \
-            -v "$PWD/${{ env.GUFO_CHECKOUT }}:/workspace/gufo" \
-            -w /workspace/gufo \
-            "$IMAGE_REF" cmake --build --preset pr
+            -v "$PWD/${{ env.GUFO_CHECKOUT }}:/workspace/gufo:ro" \
+            "$IMAGE_REF" bash -c \
+            'set -e; cp -a /workspace/gufo /tmp/gufo; cd /tmp/gufo; cmake --preset cpu-test; cmake --build --preset pr'
 
       - name: Run Gufo's repository gates
         shell: bash
