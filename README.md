@@ -84,6 +84,27 @@ podman run --rm -it \
   ghcr.io/gufo-org/toolboxes/gufo-dev:edge
 ```
 
+The image also carries the inputs Gufo's CMake build looks for: the nixpkgs GCC,
+CMake, Ninja, Python, pkg-config, ccache, clang-format and the development
+outputs of ICU, CURL, OpenSSL, libpng and libjpeg. That is enough to configure,
+build and test a Gufo checkout on a host without Nix installed, and the CPU
+contract suite needs no device access:
+
+```sh
+git clone https://github.com/gufo-org/gufo
+cd gufo
+podman run --rm \
+  --userns=keep-id:uid=1000,gid=1000 \
+  -v "$PWD:/workspace" -w /workspace \
+  ghcr.io/gufo-org/toolboxes/gufo-dev:edge \
+  bash -c 'cmake --preset cpu-test && cmake --build --preset pr'
+```
+
+Setup hooks that would otherwise export `CMAKE_PREFIX_PATH`, `CPATH`,
+`LIBRARY_PATH` and `PKG_CONFIG_PATH` never run in a started container, so the
+image configuration sets them from the packages above.
+`tests/dev-image-check.sh` reports any of them that is absent.
+
 ## Docker
 
 Docker has no `keep-id` user namespace and no `keep-groups`, so pass the
