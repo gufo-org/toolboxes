@@ -13,11 +13,22 @@ jobs:
   prune:
     runs-on: ubuntu-latest
     steps:
-      - name: Prune old container versions in GHCR
+      - name: Prune old rolling container versions in GHCR
         uses: snok/container-retention-policy@v3.1.0
         with:
           account: gufo-org
           image-names: "toolboxes/gufo-runtime toolboxes/gufo-dev"
+          image-tags: "sha-*"
+          tag-selection: tagged
           cut-off: 30d
           keep-n-most-recent: 3
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Prune old untagged container versions in GHCR
+        uses: snok/container-retention-policy@v3.1.0
+        with:
+          account: gufo-org
+          image-names: "toolboxes/gufo-runtime toolboxes/gufo-dev"
+          tag-selection: untagged
+          cut-off: 30d
           token: ${{ secrets.GITHUB_TOKEN }}
