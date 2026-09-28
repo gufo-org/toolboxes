@@ -63,6 +63,36 @@ else
 fi
 rm -f /tmp/gufo-dev-probe /tmp/gufo-dev-probe.c /tmp/gufo-dev-probe.err /tmp/gufo-dev-link.err
 
+# Compiling a header and linking a library are both weaker than what Gufo
+# actually asks for: find_package() resolves names through CMAKE_PREFIX_PATH, so
+# a package can be present in the closure and still be unfindable (the runtime
+# output of libjpeg-turbo sits in a different store path than its `bin` output).
+# Replaying the find_package() calls from Gufo's CMakeLists.txt is the check that
+# predicts whether configure will succeed. Ninja is the generator Gufo's presets
+# select, and the only one this image carries (it ships no make).
+probe_dir=$(mktemp -d)
+cat > "$probe_dir/CMakeLists.txt" << 'EOF'
+cmake_minimum_required(VERSION 3.21)
+project(gufo_dev_image_probe CXX)
+find_package(ICU REQUIRED COMPONENTS uc i18n)
+find_package(Threads REQUIRED)
+find_package(CURL REQUIRED)
+find_package(PNG REQUIRED)
+find_package(JPEG REQUIRED)
+find_package(OpenSSL REQUIRED COMPONENTS Crypto)
+message(STATUS "probe found ICU ${ICU_VERSION}, CURL ${CURL_VERSION_STRING}, "
+               "PNG ${PNG_VERSION_STRING}, JPEG ${JPEG_FOUND}, OpenSSL ${OPENSSL_VERSION}")
+EOF
+
+if cmake -S "$probe_dir" -B "$probe_dir/build" -G Ninja > "$probe_dir/cmake.log" 2>&1; then
+  echo "== find_package() replay =="
+  grep -m1 "probe found" "$probe_dir/cmake.log" | sed 's/^-- //' | cut -c1-100
+else
+  report "a find_package() dependency" "configure failed"
+  grep -E "Could NOT find|Failed to find|missing:" "$probe_dir/cmake.log" | head -5 | sed 's/^/    /' >&2
+fi
+rm -rf "$probe_dir"
+
 if [ "$failures" -ne 0 ]; then
   echo "gufo-dev image cannot build Gufo from source yet ($failures problem(s))." >&2
   exit 1
