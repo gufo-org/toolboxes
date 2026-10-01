@@ -5,20 +5,17 @@ Documentation=https://github.com/gufo-org/toolboxes
 
 [Service]
 Type=simple
-Environment=HOST=127.0.0.1
 Environment=PORT=8080
-Environment=MODEL_PATH=%h/.local/share/gufo/models/model.gguf
-Environment=THREADS=8
 
 # Run inside the gufo-runtime container using podman
 ExecStart=/usr/bin/podman run --rm --name gufo-serve \
+  --userns=keep-id:uid=1000,gid=1000 \
   --device /dev/kfd --device /dev/dri \
-  --device /dev/accel/accel0 \
   --group-add keep-groups --ulimit memlock=-1 \
   -v %h/.local/share/gufo/models:/models:ro,z \
-  -p ${PORT}:${PORT} \
+  -p 127.0.0.1:${PORT}:${PORT} \
   ghcr.io/gufo-org/toolboxes/gufo-runtime:latest \
-  gufo serve --model /models/model.gguf --host ${HOST} --port ${PORT} --threads ${THREADS}
+  gufo serve llm --model /models/model.gguf --host 0.0.0.0 --port ${PORT}
 
 ExecStop=/usr/bin/podman stop -t 10 gufo-serve
 Restart=on-failure
