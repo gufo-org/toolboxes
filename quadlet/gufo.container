@@ -1,0 +1,57 @@
+# Quadlet reference unit for the gufo-runtime image. Install it under
+# $XDG_CONFIG_HOME/containers/systemd (for example
+# ~/.config/containers/systemd/gufo.container), not under $XDG_RUNTIME_DIR:
+# the runtime directory is tmpfs, so the unit and its enable symlink disappear
+# on reboot. Apply with `systemctl --user daemon-reload`; the [Install] section
+# below is applied by the generator itself, so no `systemctl enable` is needed.
+# Add `loginctl enable-linger $USER` to start it without an open login session.
+[Unit]
+Description=Gufo Inference Server (AMD Strix Halo gfx1151)
+Documentation=https://github.com/gufo-org/toolboxes
+After=network.target local-fs.target
+
+[Container]
+Image=ghcr.io/gufo-org/toolboxes/gufo-runtime:latest
+AddDevice=/dev/kfd
+AddDevice=/dev/dri
+GroupAdd=keep-groups
+Network=pasta:--ipv4-only
+PublishPort=8080:8080
+Ulimit=memlock=-1
+UserNS=keep-id:uid=1000,gid=1000
+
+# Model artifacts are user data: XDG_DATA_HOME, read-only.
+Volume=%h/.local/share/gufo/models:/models:ro,z
+# Continuation snapshots + GGUF digest cache are disposable: XDG_CACHE_HOME.
+Volume=%h/.cache/gufo:/var/cache/gufo:rw,z
+Environment=XDG_CACHE_HOME=/var/cache
+
+Exec=gufo serve llm --model /models/qwen3.8-flash-next/UD-Q4_K_XL/Qwen3.8-Flash-Next-UD-Q4_K_XL-00001-of-00004.gguf --host 0.0.0.0 --port 8080 --cache-disk /var/cache/gufo/continuation --cache-disk-staging-bytes 8589934592 --cache-disk-bytes 68719476736 --served-model-name qwen3.8-flash
+HealthCmd=curl -fsS http://127.0.0.1:8080/ready
+HealthStartPeriod=300s
+HealthInterval=30s
+HealthRetries=3
+AutoUpdate=registry
+StopSignal=SIGTERM
+StopTimeout=90
+
+# Trusted LAN: no auth. If that ever changes, /ready is gated too, so the
+# health probe must carry the token, and the key comes from EnvironmentFile.
+# EnvironmentFile=-%h/.config/gufo/server.env
+# Exec=gufo serve llm ... --api-key ${GUFO_API_KEY}
+# HealthCmd=curl -fsS -H "Authorization: Bearer ${GUFO_API_KEY}" http://127.0.0.1:8080/ready
+
+[Service]
+# systemd's stop job must outlast podman's --stop-timeout, or the drain is cut
+# short; Fedora additionally escalates an overrun to SIGABRT (10-timeout-abort).
+TimeoutStopSec=120
+# Type=notify reports ready once the container has started, so this covers the
+# image pull that `podman run` performs before the model load begins.
+TimeoutStartSec=infinity
+# SIGTERM/SIGINT shutdown exits 0, so this only catches crashes and the
+# fatal_signal path (which re-raises with the default action after logging).
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=default.target
