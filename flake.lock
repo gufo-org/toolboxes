@@ -27,11 +27,11 @@
         "nixpkgs": "nixpkgs"
       },
       "locked": {
-        "lastModified": 1790845200,
-        "narHash": "sha256-O1fmq5N1wktNU1exLtB818UGs6/ePDz5AHWKQB/ubng=",
+        "lastModified": 1790935640,
+        "narHash": "sha256-oFlQ9MScdzWbQI648pVkkFsPWvCOWuBTe/xwprOhJkw=",
         "owner": "gufo-org",
         "repo": "gufo",
-        "rev": "446cb141f8b312befdbfb58945c01db3897ba09a",
+        "rev": "4236bd3991f48c1bb09e1841d3866cf65239ba8b",
         "type": "github"
       },
       "original": {
