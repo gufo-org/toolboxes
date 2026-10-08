@@ -15,7 +15,7 @@ Toolbx and Distrobox are not supported. The containers run as the dedicated
 | Image | Reference | Purpose |
 | :--- | :--- | :--- |
 | `gufo-runtime` | `ghcr.io/gufo-org/toolboxes/gufo-runtime:edge` | Gufo inference, serving, benchmarks, and diagnostics |
-| `gufo-dev` | `ghcr.io/gufo-org/toolboxes/gufo-dev:edge` | C++/HIP development, profiling, and kernel tuning |
+| `gufo-dev` | `ghcr.io/gufo-org/toolboxes/gufo-dev:edge` | Builds Gufo from source, profiling, and kernel tuning |
 
 Stable releases publish immutable `X.Y.Z` tags plus the floating `X.Y` and
 `latest` aliases. The rolling `edge` channel follows the Gufo revision pinned
@@ -84,6 +84,53 @@ podman run --rm -it \
   ghcr.io/gufo-org/toolboxes/gufo-dev:edge
 ```
 
+That shell builds Gufo from source. The image carries a host C and C++ compiler,
+`pkg-config`, `cmake`, `ninja`, GNU `make`, `python3` with `numpy` for the tests
+CMake registers, `ffmpeg` and `ffprobe` for the media path, `gdb`,
+`clang-format`, `clang-tidy`, `ccache`, and the development outputs of every
+system and ROCm library Gufo discovers with `find_package`. Because a Nix image
+has no `/opt/rocm` and no system `/usr/include`, the image configuration exports
+`CMAKE_PREFIX_PATH`, `NIX_CC`, `PKG_CONFIG_PATH` and `HIP_DEVICE_LIB_PATH` instead, so
+the repository presets configure with no extra flags.
+
+The development tools come from the same nixpkgs that built the `gufo` binary in
+the image: the flake follows `gufo-engine/nixpkgs` instead of resolving its own,
+so one ROCm, one clang and one glibc are in the closure.
+
+```sh
+podman volume create gufo-ccache
+
+podman run --rm -it \
+  --userns=keep-id:uid=1000,gid=1000 \
+  --device /dev/kfd --device /dev/dri --group-add keep-groups \
+  --ulimit memlock=-1 \
+  -v "$PWD:/workspace" -w /workspace \
+  -v gufo-ccache:/home/gufo/.cache/ccache \
+  ghcr.io/gufo-org/toolboxes/gufo-dev:edge
+
+# Inside the container.
+cmake --preset release -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+cmake --build --preset release --parallel 8
+./build/release/gufo diagnose   # reports gfx1151 and the pinned ROCm version
+```
+
+Mount `ccache` as a named volume, as above: `~/.cache/ccache` disappears with a
+`--rm` container otherwise. On Strix Halo a wiped-tree `gpu-test` rebuild of all
+173 registered tests took 112 s cold and 88 s with the cache warm at 313 of 313
+C and C++ objects hit: HIP kernels recompile either way, so the cache pays off on
+C++ edits and reconfiguration rather than on a full rebuild.
+
+Configure prints eight informational lines about `libidn2` being required by
+`libcurl`. CMake's FindPkgConfig mirrors `CMAKE_PREFIX_PATH` into pkg-config's
+search path, `libcurl.pc` names requirements whose `.pc` files the image does not
+list, and FindCURL resolves curl from that same prefix regardless, so the build is
+unaffected. `-DPKG_CONFIG_USE_CMAKE_PREFIX_PATH=OFF` silences the report.
+
+Following `gufo-engine/nixpkgs` also drops the second ROCm, clang and glibc every
+image used to carry: measured on Strix Halo the development image is 6.98 GB
+against the 10.54 GB published one, compiler, Python, ffmpeg and development
+headers included, and the runtime image is 4.39 GB against 5.34 GB.
+
 ## Docker
 
 Docker has no `keep-id` user namespace and no `keep-groups`, so pass the
@@ -141,7 +188,8 @@ docker run --rm \
 
 For the development image, mount the checkout and start the default shell.
 `hipcc` and CMake projects using `LANGUAGES HIP` compile for `gfx1151` without
-extra flags:
+extra flags. The image also carries the complete Gufo build toolchain; see
+[Development image](#development-image).
 
 ```sh
 docker run --rm -it \
