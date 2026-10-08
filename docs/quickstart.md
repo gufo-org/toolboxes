@@ -19,7 +19,7 @@ account, so writable bind mounts remain usable without changing ownership.
 | Image | Use case |
 | :--- | :--- |
 | `gufo-runtime` | Inference, model serving, benchmarks, and diagnostics |
-| `gufo-dev` | C++/HIP development and profiling |
+| `gufo-dev` | Building Gufo from source, C++/HIP development and profiling |
 
 Pull both with:
 
