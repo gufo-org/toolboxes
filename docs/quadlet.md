@@ -80,9 +80,13 @@ systemctl --user start gufo
 journalctl --user -u gufo -f
 ```
 
-The service reports ready once the *container* starts, not once the model
-loads. Loading the 111 GB Flash-Next shards measured about 15 s with the files
-already in the page cache and about 60 s cold, so gate traffic on readiness:
+`Notify=healthy` postpones systemd's readiness notification until the `/ready`
+probe passes, so `systemctl --user start gufo` blocks through model loading and
+`systemctl --user is-active gufo` reports `activating` until the backend can
+actually serve. Loading the 111 GB Flash-Next shards measured about 15 s with
+the files already in the page cache and about 60 s cold (99.7 s on the host this
+example was verified on, with two 262 K sessions plus the MTP and vision
+sidecars). Probe directly too — that is the check to script:
 
 ```sh
 curl -fsS http://127.0.0.1:8080/health   # process alive, always 200
@@ -111,11 +115,48 @@ and a fixed public model id. Flags worth reviewing before reuse:
 `Network=pasta:--ipv4-only` publishes through pasta, which adds a userspace hop.
 `Network=host` avoids it if LAN throughput matters more than isolation.
 
-## 5. Health checks and auto-updates
+## 5. Readiness, liveness and auto-updates
 
-The example probes `/ready` with `curl`, which the runtime image provides, and
-`HealthStartPeriod=300s` to cover model loading. A failed probe only marks the
-container unhealthy unless you also set `HealthOnFailure=`.
+### Readiness
+
+The example probes `/ready` with `curl`, which the runtime image provides.
+`HealthStartPeriod=300s` covers model loading, `-m 10` bounds the request
+itself, and `HealthTimeout=15s` sits behind curl so that a slow probe is always
+reported as curl's exit code rather than as a healthcheck timeout killing it.
+`Notify=healthy` then turns that probe into systemd's startup signal, and the
+pairing is what makes the rest of this section work:
+
+- `systemctl --user start gufo` blocks until the model serves, and units that
+  order after it wait for the same moment.
+- a build that never passes `/ready` becomes a **failed start job** at
+  `TimeoutStartSec`. That failure is the only signal `podman auto-update` has
+  for deciding that a new image is bad.
+- both halves are required. `Notify=healthy` with `TimeoutStartSec=infinity`
+  makes "READY never arrived" indistinguishable from "still loading".
+
+### Liveness
+
+`READY` is one-shot. A later `healthy → unhealthy` transition sends systemd
+nothing, so without `HealthOnFailure=` a wedged server keeps its listener open,
+answers nothing, and stays `active (running)` forever. The example sets
+`HealthOnFailure=stop`, which stops the container on the transition and lets
+`Restart=always` start a fresh one.
+
+Prefer `stop` over `kill`: `stop` follows `StopSignal=SIGTERM` and therefore the
+cancel-and-drain path in [section 6](#6-stop-and-restart-behaviour), while
+`kill` skips it. A process wedged badly enough to ignore `SIGTERM` is SIGKILLed
+after `StopTimeout` either way, so the gentle path costs at most that much.
+A real wedge is therefore detected after three failed probes (roughly 60–70 s),
+then stopped, then reloaded: budget about five minutes to a recovered server.
+Recovery is cheaper in prompt terms than that, because `--cache-disk` rebuilds
+conversations from snapshots instead of re-prefilling them.
+
+Because recovery and a human tuning the unit both restart the service, and each
+attempt costs a full load, `[Unit]` lowers the start-rate limit from the systemd
+default (5 starts in 10 s, which cannot fire when each attempt runs for minutes)
+to 5 starts in 30 min, so a systemic failure stops instead of looping.
+
+### Auto-updates
 
 `AutoUpdate=registry` reacts to the Podman auto-update timer:
 
@@ -124,11 +165,44 @@ systemctl --user enable --now podman-auto-update.timer
 systemctl --user list-timers podman-auto-update.timer
 ```
 
-The stock user timer is `OnCalendar=daily` with a 15-minute random delay, so
-updates arrive at an unpredictable time and restart the server. Pin the image
-digest, or override the timer with a quiet-hour `OnCalendar=`, if that matters.
-Do not combine `AutoUpdate=registry` with a floating `latest` tag and unattended
-hours unless you accept a new engine build going live untested.
+The stock user timer is `OnCalendar=daily` with a 15-minute random delay, so the
+cutover lands at an unpredictable time and restarts a warm server, and it can
+promote an untested engine build. Three ways to live with it:
+
+- **Gate it.** Keep `AutoUpdate=registry`, which is what declares the policy,
+  but drive the update yourself:
+
+  ```sh
+  systemctl --user disable --now podman-auto-update.timer
+  podman auto-update --dry-run --format '{{.Image}} {{.Updated}} {{.Unit}}'
+  systemctl --user start podman-auto-update.service
+  ```
+
+- **Narrow the range.** The policy resolves the tag recorded on the container, so
+  the tag has to float. `:latest` takes every release; the minor tags in the
+  image repository float over patches only. List them with
+  `skopeo list-tags docker://ghcr.io/gufo-org/toolboxes/gufo-runtime`.
+- **Move the window.** Override the timer with a quiet-hour `OnCalendar=`.
+
+Pinning does *not* soften this — it disables it. `AutoUpdate=registry` compares
+the remote digest **of a tag**, so a digest reference or a `sha-*` tag resolves
+to itself forever and the policy quietly stops updating. Pin that way only when
+no updates at all is the intent.
+
+Rolling back is cheap, because the published patch tags are retained:
+
+```sh
+podman pull ghcr.io/gufo-org/toolboxes/gufo-runtime:0.9.0  # last known good
+# set Image=ghcr.io/gufo-org/toolboxes/gufo-runtime:0.9.0, then
+systemctl --user daemon-reload && systemctl --user restart gufo
+```
+
+A named tag also survives `podman image prune`; the dangling image that the old
+`latest` used to point at does not, so do not prune between an update and the
+rollback you may want. Podman's own `--rollback` is best effort: it judges the
+restart by the READY it receives over sdnotify — another reason for
+`Notify=healthy` — and `Restart=always` relaunches every `RestartSec`, which can
+race that check. Watch the first restart after any update.
 
 ## 6. Stop and restart behaviour
 
@@ -178,6 +252,11 @@ responses and should retry. Consequences for the unit:
   example does, makes later launches reuse that digest.
 - Container marked unhealthy during startup: `HealthStartPeriod` is shorter
   than the model load.
+- `activating` for a long time and then a failed start at `TimeoutStartSec`: the
+  readiness gate working, not a new failure mode — `/ready` never passed. Read
+  the load log, and pre-pull the image if the start also included a slow pull.
+- "Start request repeated too quickly": the `[Unit]` start-rate limit. Fix the
+  cause, then `systemctl --user reset-failed gufo.service`.
 - Permission denied on a bind mount: the runtime writes as UID/GID `1000:1000`.
   On SELinux hosts, `:z` relabels the whole host tree for shared access and
   `:Z` gives it a private label; after the first start
