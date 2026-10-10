@@ -2,8 +2,12 @@
   description = "Gufo OCI images for Docker and Podman on AMD Strix Halo";
 
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     gufo-engine.url = "github:gufo-org/gufo";
+    # One nixpkgs per image. Resolving the root input independently put a
+    # second ROCm, a second clang and a second glibc next to the closure that
+    # built the shipped binary, so the development image's cmake, ninja,
+    # clang-tools and rocmPackages were not the ones Gufo builds with.
+    nixpkgs.follows = "gufo-engine/nixpkgs";
   };
 
   outputs =
