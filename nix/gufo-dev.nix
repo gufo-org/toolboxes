@@ -141,6 +141,14 @@ let
         # GUFO_ROCWMMA_ROOT entries, which no build in either repository read.
         "CMAKE_PREFIX_PATH=${cmakePrefixPath}"
         "PKG_CONFIG_PATH=${pkgConfigPath}"
+        # Compiler-cache policy mirrors Gufo's development shell: CMake
+        # attaches ccache as the C/C++ launcher whenever it is on PATH.
+        # CCACHE_DIR stays at the user default so a container run can mount
+        # it as a volume; CCACHE_BASEDIR stays unset because the checkout
+        # path varies per run.
+        "CCACHE_COMPILERCHECK=content"
+        "CCACHE_MAXSIZE=2G"
+        "CCACHE_NOHASHDIR=true"
       ];
       Cmd = [ "/bin/bash" ];
       User = containerUser;

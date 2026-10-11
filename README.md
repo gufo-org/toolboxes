@@ -108,14 +108,17 @@ podman run --rm -it \
   -v gufo-ccache:/home/gufo/.cache/ccache \
   ghcr.io/gufo-org/toolboxes/gufo-dev:edge
 
-# Inside the container.
-cmake --preset release -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+# Inside the container. Gufo compiles C and C++ through ccache when it is
+# on PATH, so no launcher flag is needed.
+cmake --preset release
 cmake --build --preset release --parallel 8
 ./build/release/gufo diagnose   # reports gfx1151 and the pinned ROCm version
 ```
 
 Mount `ccache` as a named volume, as above: `~/.cache/ccache` disappears with a
-`--rm` container otherwise. On Strix Halo a wiped-tree `gpu-test` rebuild of all
+`--rm` container otherwise. The image exports the same cache policy as Gufo's
+development shell, so the volume is the only state a rebuild needs. On Strix
+Halo a wiped-tree `gpu-test` rebuild of all
 173 registered tests took 112 s cold and 88 s with the cache warm at 313 of 313
 C and C++ objects hit: HIP kernels recompile either way, so the cache pays off on
 C++ edits and reconfiguration rather than on a full rebuild.
