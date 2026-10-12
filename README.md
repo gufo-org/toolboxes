@@ -173,6 +173,7 @@ nix build .#packages.x86_64-linux.gufo-runtime-image
 
 - [Host configuration](docs/host-configuration.md)
 - [Quick start](docs/quickstart.md)
+- [Quadlet service](docs/quadlet.md)
 - [Podman systemd service](docs/systemd.md)
 
 ## License

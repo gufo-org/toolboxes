@@ -2,6 +2,10 @@
 
 You can run `gufo serve` as a background systemd user service via Podman.
 
+For rootless Podman, prefer the [Quadlet service](quadlet.md), which the
+`quadlet/` directory ships as a maintained example. This page documents a
+hand-written unit; that form is also the only option for Docker.
+
 ---
 
 ## 1. Directory Setup

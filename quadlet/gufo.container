@@ -1,0 +1,90 @@
+# Quadlet reference unit for the gufo-runtime image. Install it under
+# $XDG_CONFIG_HOME/containers/systemd (for example
+# ~/.config/containers/systemd/gufo.container), not under $XDG_RUNTIME_DIR:
+# the runtime directory is tmpfs, so the unit and its enable symlink disappear
+# on reboot. Apply with `systemctl --user daemon-reload`; the [Install] section
+# below is applied by the generator itself, so no `systemctl enable` is needed.
+# Add `loginctl enable-linger $USER` to start it without an open login session.
+[Unit]
+Description=Gufo Inference Server (AMD Strix Halo gfx1151)
+Documentation=https://github.com/gufo-org/toolboxes
+After=network.target local-fs.target
+# Health-driven recovery below and a human editing this unit both restart the
+# service, and every attempt costs a full model load, so the systemd default
+# (5 starts in 10 s) can never fire and a persistently failing build loops
+# forever. This bounds a systemic failure instead. After fixing the cause:
+#   systemctl --user reset-failed gufo.service
+StartLimitIntervalSec=1800
+StartLimitBurst=5
+
+[Container]
+Image=ghcr.io/gufo-org/toolboxes/gufo-runtime:latest
+AddDevice=/dev/kfd
+AddDevice=/dev/dri
+GroupAdd=keep-groups
+Network=pasta:--ipv4-only
+PublishPort=8080:8080
+Ulimit=memlock=-1
+UserNS=keep-id:uid=1000,gid=1000
+
+# Model artifacts are user data: XDG_DATA_HOME, read-only.
+Volume=%h/.local/share/gufo/models:/models:ro,z
+# Continuation snapshots + GGUF digest cache are disposable: XDG_CACHE_HOME.
+Volume=%h/.cache/gufo:/var/cache/gufo:rw,z
+Environment=XDG_CACHE_HOME=/var/cache
+
+Exec=gufo serve llm --model /models/qwen3.8-flash-next/UD-Q4_K_XL/Qwen3.8-Flash-Next-UD-Q4_K_XL-00001-of-00004.gguf --host 0.0.0.0 --port 8080 --cache-disk /var/cache/gufo/continuation --cache-disk-staging-bytes 8589934592 --cache-disk-bytes 68719476736 --served-model-name qwen3.8-flash
+
+# A probe with no bound inherits Podman's 30 s healthcheck timeout, so a wedged
+# server is judged by curl hanging instead of by the request it cannot answer.
+# /ready answers in well under a millisecond on a loaded host, so 10 s is a
+# stall; HealthTimeout sits 5 s behind curl so a failure is always curl's exit
+# code and never a timeout killing the probe.
+HealthCmd=curl -fsS -m 10 http://127.0.0.1:8080/ready
+HealthTimeout=15s
+HealthStartPeriod=300s
+HealthInterval=30s
+HealthRetries=3
+# READY is one-shot: a later healthy -> unhealthy transition sends systemd
+# nothing, so without this a wedged server keeps its listener open, answers
+# nothing, and stays "active (running)" indefinitely. `stop`, not `kill`: stop
+# goes through the StopSignal=SIGTERM path (cancel in-flight requests, drain
+# accepted disk writes) documented in docs/quadlet.md, and a process wedged
+# badly enough to ignore SIGTERM is SIGKILLed after StopTimeout either way.
+HealthOnFailure=stop
+# Report READY when the probe passes rather than when conmon forks, so systemd
+# and anything ordering after this unit wait for a loaded model. This is also
+# the only signal podman auto-update has for a bad build, which is why
+# TimeoutStartSec below must not be infinity.
+Notify=healthy
+AutoUpdate=registry
+StopSignal=SIGTERM
+StopTimeout=90
+
+# Trusted LAN: no auth. If that ever changes, /ready is gated too, so the
+# health probe must carry the token, and the key comes from EnvironmentFile.
+# EnvironmentFile=-%h/.config/gufo/server.env
+# Exec=gufo serve llm ... --api-key ${GUFO_API_KEY}
+# HealthCmd=curl -fsS -H "Authorization: Bearer ${GUFO_API_KEY}" http://127.0.0.1:8080/ready
+
+[Service]
+# systemd's stop job must outlast podman's --stop-timeout, or the drain is cut
+# short; Fedora additionally escalates an overrun to SIGABRT (10-timeout-abort).
+TimeoutStopSec=120
+# Must stay FINITE for Notify=healthy to be a signal at all: with infinity,
+# "READY never arrived" is indistinguishable from "still loading", so a build
+# that never passes /ready sits in `activating` forever and neither an operator
+# nor podman auto-update ever sees a failed start to act on. The budget covers
+# the image pull `podman run` performs before loading, the load itself (~15 s
+# warm page cache to ~100 s cold for Flash-Next, longer with more sessions), and
+# the probe window: HealthStartPeriod=300s, then HealthRetries=3 at
+# HealthInterval=30s, which declares failure by ~390 s.
+# Pre-pull the image if the first start may land on a slow link.
+TimeoutStartSec=900s
+# SIGTERM/SIGINT shutdown exits 0, so this only catches crashes and the
+# fatal_signal path (which re-raises with the default action after logging).
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=default.target
