@@ -24,6 +24,7 @@ jobs:
           client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
           private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
           permission-contents: write
+          permission-pull-requests: write
 
       - name: Checkout main
         uses: actions/checkout@v4
@@ -44,8 +45,11 @@ jobs:
       - name: Validate updated lock file
         run: nix flake check --no-build
 
-      - name: Commit and push lock-file changes
+      - name: Open pull request and enable auto-merge
         shell: bash
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          BRANCH: deps/update-gufo
         run: |
           if git diff --quiet -- flake.lock; then
             echo "No dependency updates available."
@@ -54,6 +58,16 @@ jobs:
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$BRANCH"
           git add flake.lock
           git commit -m "chore(deps): update Gufo"
-          git push origin HEAD:main
+          git push --force origin "$BRANCH"
+
+          pr=$(gh pr list --head "$BRANCH" --base main --state open --json number --jq '.[0].number')
+          if [[ -z "$pr" ]]; then
+            gh pr create --base main --head "$BRANCH" \
+              --title "chore(deps): update Gufo" \
+              --body "Automated update of the \`gufo-engine\` flake input."
+          fi
+
+          gh pr merge "$BRANCH" --squash --auto --delete-branch
