@@ -1,0 +1,10 @@
+# build residue: dh staging and generated state never belong in the lane
+debhelper/
+.debhelper/
+*.deb
+*.buildinfo
+*.changes
+# a build assembles <checkout>/debian/ from common/; a stray staging dir here is output
+/common/gufo/
+/common/gufo-rocm-repo/
+/common/files
