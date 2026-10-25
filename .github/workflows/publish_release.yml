@@ -10,6 +10,16 @@ on:
         description: Gufo release tag, for example v0.2.0
         required: true
         type: string
+      windows-only:
+        description: Rebuild and upload only the Windows ZIP (skip OCI images)
+        required: false
+        type: boolean
+        default: false
+      replace-windows-assets:
+        description: Replace the Windows ZIP and checksum already attached to this tag
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -68,6 +78,7 @@ jobs:
       contents: read
     env:
       RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+      REPLACE_WINDOWS_ASSETS: ${{ github.event_name == 'workflow_dispatch' && inputs.replace-windows-assets }}
     steps:
       # Artifacts uploaded by a called workflow belong to this Toolboxes run.
       - name: Download Windows release
@@ -98,11 +109,16 @@ jobs:
         run: |
           set -euo pipefail
           gh release view "$RELEASE_TAG" --repo gufo-org/gufo
-          gh release upload "$RELEASE_TAG" --repo gufo-org/gufo \
+          upload_args=()
+          if [[ "$REPLACE_WINDOWS_ASSETS" == true ]]; then
+            upload_args+=(--clobber)
+          fi
+          gh release upload "$RELEASE_TAG" --repo gufo-org/gufo "${upload_args[@]}" \
             "release/gufo-${RELEASE_TAG}-windows-x86_64.zip" \
             "release/gufo-${RELEASE_TAG}-windows-x86_64.zip.sha256"
 
   build-and-push:
+    if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.windows-only) }}
     needs: prepare
     runs-on: ubuntu-latest
     strategy:

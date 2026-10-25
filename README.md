@@ -191,3 +191,20 @@ nix build .#packages.x86_64-linux.gufo-runtime-image
 ## License
 
 MIT. See [LICENSE](LICENSE).
+
+### Repairing an existing Windows release ZIP
+
+After the Windows packaging fix is merged into Gufo `main`, an operator can
+rebuild an older release without moving its source tag or republishing OCI images:
+
+```sh
+gh workflow run publish_release.yml --repo gufo-org/toolboxes --ref main \
+  -f tag=v0.24.0 -f windows-only=true -f replace-windows-assets=true
+```
+
+This builds Gufo from the exact release tag using the current Windows packaging
+workflow, verifies the ZIP checksum, and replaces both the Windows ZIP and its
+`.sha256` asset. The asset download URLs remain the same; their contents and
+checksums change. Replacement is explicit and defaults to disabled. Ordinary
+release dispatches still reject existing assets. No Linux images or image tags
+are changed when `windows-only` is enabled.
