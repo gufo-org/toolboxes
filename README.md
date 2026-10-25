@@ -22,6 +22,19 @@ Stable releases publish immutable `X.Y.Z` tags plus the floating `X.Y` and
 by the daily dependency update and also publishes an immutable
 `sha-<full-gufo-revision>` tag. Rolling updates never advance `latest`.
 
+The stable release workflow also calls Gufo's reusable Windows build for the
+exact release tag. It attaches `gufo-vX.Y.Z-windows-x86_64.zip` and a SHA-256
+checksum to the [Gufo release](https://github.com/gufo-org/gufo/releases).
+The ZIP includes `gufo.exe` and its runtime DLLs; extract the entire archive
+before running it. Use `gufo.exe serve` for the HTTP server.
+
+The Windows caller requires Gufo's reusable workflow to be merged first.
+Configure `RELEASE_APP_CLIENT_ID` (variable) and `RELEASE_APP_PRIVATE_KEY`
+(secret) for this repository, using the release app installed on Gufo with
+Contents write permission. The upload job mints its token after the build;
+existing release assets are never overwritten. Use the manual stable release
+workflow with a Gufo tag to recover a failed run.
+
 The examples use rootless Podman with `crun`. `--userns=keep-id:uid=1000,gid=1000`
 maps the invoking host user to the image's `gufo` account, so writable bind
 mounts work without changing their ownership. `--group-add keep-groups` carries

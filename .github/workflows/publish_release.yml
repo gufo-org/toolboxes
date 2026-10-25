@@ -1,4 +1,4 @@
-name: Publish Stable Gufo OCI Images
+name: Publish Stable Gufo Releases
 
 on:
   repository_dispatch:
@@ -48,6 +48,59 @@ jobs:
             echo "version=${version}"
             echo "series=${version%.*}"
           } >> "$GITHUB_OUTPUT"
+
+  build-windows:
+    needs: prepare
+    permissions:
+      actions: read
+      contents: read
+    # Merge Gufo's reusable workflow before enabling this caller. The build
+    # definition follows main; its source checkout uses this exact release tag.
+    uses: gufo-org/gufo/.github/workflows/windows.yml@main
+    with:
+      release-tag: ${{ needs.prepare.outputs.tag }}
+
+  publish-windows:
+    needs: [prepare, build-windows]
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+    env:
+      RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+    steps:
+      # Artifacts uploaded by a called workflow belong to this Toolboxes run.
+      - name: Download Windows release
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: ${{ needs.build-windows.outputs.artifact-name }}
+          path: release
+
+      - name: Verify Windows release checksum
+        working-directory: release
+        run: sha256sum --check "gufo-${RELEASE_TAG}-windows-x86_64.zip.sha256"
+
+      # Mint after the Windows build: installation tokens expire in an hour.
+      - name: Create Gufo release app token
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          owner: gufo-org
+          repositories: gufo
+          permission-contents: write
+
+      - name: Attach Windows assets to the Gufo release
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release view "$RELEASE_TAG" --repo gufo-org/gufo
+          gh release upload "$RELEASE_TAG" --repo gufo-org/gufo \
+            "release/gufo-${RELEASE_TAG}-windows-x86_64.zip" \
+            "release/gufo-${RELEASE_TAG}-windows-x86_64.zip.sha256"
 
   build-and-push:
     needs: prepare
