@@ -28,11 +28,11 @@
         "nixpkgs-rocm10": "nixpkgs-rocm10"
       },
       "locked": {
-        "lastModified": 1793084591,
-        "narHash": "sha256-aLccL1UBLKKsokKgzYEUmZAvAu6nx2J9gyPAdUyYMwk=",
+        "lastModified": 1793121082,
+        "narHash": "sha256-WgDIUOxbRo2aYqIHwMoQMacCrOny73wbPBvIOW6pkVU=",
         "owner": "gufo-org",
         "repo": "gufo",
-        "rev": "c0e0be589d287b6935c3f8304e0bc3e63a9f05d5",
+        "rev": "9974cb4cf3d72f18fe8afc7ab0d973eab576f6be",
         "type": "github"
       },
       "original": {
@@ -43,11 +43,11 @@
     },
     "nixpkgs": {
       "locked": {
-        "lastModified": 1786384358,
-        "narHash": "sha256-RzPPiWeUtuvymnpuEWsdtzli5w4kjZs49FqEs3/1u+I=",
+        "lastModified": 1792773339,
+        "narHash": "sha256-rZLrzrC6i+jnTAlvPZHogKDulY7WWDEv9hJeHieO7Zw=",
         "owner": "NixOS",
         "repo": "nixpkgs",
-        "rev": "2fcb964de67fcf60b43471c55d5d99e61a9ccb5a",
+        "rev": "3ec636362e1816bc2f0888fa0fa2c69f1bc9e504",
         "type": "github"
       },
       "original": {
