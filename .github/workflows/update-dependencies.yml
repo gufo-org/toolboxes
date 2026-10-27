@@ -36,6 +36,8 @@ jobs:
         uses: cachix/install-nix-action@v31.11.1
         with:
           extra_nix_config: |
+            extra-substituters = https://gufo.cachix.org
+            extra-trusted-public-keys = gufo.cachix.org-1:rfZe3n4lHINgyoACKzs5EthIZmBNvEyCCtufUpth0PE=
             experimental-features = nix-command flakes
             accept-flake-config = true
 

@@ -15,7 +15,24 @@
     let
       supportedSystems = [ "x86_64-linux" ];
       forAllSystems = nixpkgs.lib.genAttrs supportedSystems;
-      pkgs = forAllSystems (system: import nixpkgs { inherit system; });
+      # Older engine pins expose ROCm 10.1 as rocm10; newer pins use default.
+      # Build both image variants from the same engine/toolchain selection.
+      engines = forAllSystems (system:
+        let
+          upstream = gufo-engine.packages.${system};
+          engine = upstream.rocm10 or upstream.default;
+        in
+        assert nixpkgs.lib.versions.majorMinor engine.toolchain.rocmVersion == "10.1";
+        {
+          default = engine;
+          release = engine.override { releaseVersion = gufo-engine.lib.releaseVersion; };
+        });
+      pkgs = forAllSystems (system: import nixpkgs {
+        inherit system;
+        overlays = [ (_final: _prev: {
+          rocmPackages = engines.${system}.default.rocmPackages;
+        }) ];
+      });
       containerUid = 1000;
       containerGid = 1000;
       containerUser = "${toString containerUid}:${toString containerGid}";
@@ -159,8 +176,8 @@
             ))
           ];
         in
-        modules null edgeImage gufo-engine.packages.${system}.default
-        ++ modules "release" releaseImage gufo-engine.packages.${system}.release
+        modules null edgeImage engines.${system}.default
+        ++ modules "release" releaseImage engines.${system}.release
       );
     in
     {
