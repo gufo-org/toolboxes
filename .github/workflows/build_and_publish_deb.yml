@@ -1,0 +1,197 @@
+name: Publish Gufo .deb Packages
+
+# Same release seam as publish_release.yml: the engine's release automation dispatches
+# gufo-release, and this lane consumes it. Nothing here re-implements release decisions.
+
+on:
+  repository_dispatch:
+    types:
+      - gufo-release
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Gufo release tag, for example v0.23.0
+        required: true
+        type: string
+  pull_request:
+    paths:
+      - 'deb/**'
+      - '.github/workflows/build_and_publish_deb.yml'
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: deb-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  BUILDER_IMAGE: gufo-deb-builder
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.release.outputs.tag }}
+      version: ${{ steps.release.outputs.version }}
+      skip_build: ${{ steps.release.outputs.skip_build }}
+    steps:
+      - name: Resolve the ref to build
+        id: release
+        env:
+          RELEASE_TAG: ${{ github.event.client_payload.tag || inputs.tag }}
+          EVENT_NAME: ${{ github.event_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${EVENT_NAME}" == "pull_request" ]]; then
+            # A pull request tests the packaging; it does not mint a version. There is no tag
+            # to derive one from, so the gates run against an untagged checkout stamped
+            # +git<sha>, and no artifact is published.
+            echo "tag=" >> "$GITHUB_OUTPUT"
+            echo "version=" >> "$GITHUB_OUTPUT"
+            echo "skip_build=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [[ ! "${RELEASE_TAG}" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo "Expected a Gufo release tag like v<tag>, got: ${RELEASE_TAG}" >&2
+            exit 1
+          fi
+          VERSION="${RELEASE_TAG#v}"
+          # Compare bytes, not tags. Every engine tag -- including a Windows-only patch -- fans out
+          # to every toolbox, and without this guard each one rebuilds byte-identical Linux artifacts
+          # and uploads them as new assets. On the publishing side that is worse than noise: it is
+          # how a .deb ends up whose version matches the tag but whose code does not. So ask what
+          # engine the release actually carries and compare with the previous release: identical bytes
+          # mean there is nothing to build, and the run says so and publishes nothing.
+          ENGINE_ASSET=gufo-engine-linux-x86_64.tar.xz
+          has_deb=no
+          gh release view "${RELEASE_TAG}" --repo "${GITHUB_REPOSITORY}" --json assets \
+            --jq '.assets[].name' 2>/dev/null | grep -qx "gufo_${VERSION}-1_amd64.deb" && has_deb=yes
+          cur="$(gh release view "${RELEASE_TAG}" --repo "${GITHUB_REPOSITORY}" --json assets \
+            --jq ".assets[] | select(.name==\"${ENGINE_ASSET}\") | .updatedAt" 2>/dev/null || true)"
+          prev_tag="$(gh release list --repo "${GITHUB_REPOSITORY}" --limit 5 --json tagName,isLatest \
+            --jq '[.[] | select(.isLatest | not)] | .[0].tagName // ""' 2>/dev/null || true)"
+          prev=""
+          [[ -n "${prev_tag}" ]] && prev="$(gh release view "${prev_tag}" --repo "${GITHUB_REPOSITORY}" --json assets \
+            --jq ".assets[] | select(.name==\"${ENGINE_ASSET}\") | .updatedAt" 2>/dev/null || true)"
+          if [[ "${has_deb}" == "yes" && -n "${cur}" && "${cur}" == "${prev}" ]]; then
+            echo "Release ${RELEASE_TAG} carries the same Linux engine as ${prev_tag}: nothing to rebuild, publishing nothing."
+            echo "tag=${RELEASE_TAG}" >> "$GITHUB_OUTPUT"
+            echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+            echo "skip_build=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "tag=${RELEASE_TAG}" >> "$GITHUB_OUTPUT"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "skip_build=false" >> "$GITHUB_OUTPUT"
+
+  lint:
+    # The cheap gates: they run on every pull request and need no compiler, no network to
+    # AMD's repository, and no artifact.
+    needs: prepare
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Shell syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          for f in deb/build-deb deb/gen-deb-ver deb/tests/apt-pin-scope.sh \
+                   deb/common/rules deb/common/*.sh deb/common/tests/*; do
+            [[ -f "$f" ]] || continue
+            case "$f" in
+              *.sh|*upgrade-units|*build-deb|*gen-deb-ver) bash -n "$f" ;;
+            esac
+            echo "syntax ok: $f"
+          done
+
+      - name: Lifecycle matrix (stubs, no root, no network)
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --depth 1 https://github.com/gufo-org/gufo.git engine
+          rm -rf engine/debian && cp -a deb/common engine/debian
+          chmod +x engine/debian/tests/upgrade-units
+          ./deb/common/tests/upgrade-units
+
+      - name: apt pin scope, with its negative control
+        shell: bash
+        run: ./deb/tests/apt-pin-scope.sh
+
+      - name: No private infrastructure in shipped files
+        shell: bash
+        run: |
+          set -euo pipefail
+          # The scanner's own pattern text would match itself, and a gate that fails on its own
+          # source is a gate nobody trusts after the first false alarm. Skip the scanner and the
+          # prose; scan what actually ships.
+          if grep -rnE '192\.168\.[0-9]+\.[0-9]+|/home/[a-z0-9._-]+/|\.internal\b|\.lan\b' \
+               deb --exclude='*.md' --exclude='apt-pin-scope.sh' --exclude-dir=.git 2>/dev/null; then
+            echo "shipped files carry a private address, home path or internal hostname" >&2
+            exit 1
+          fi
+          echo "clean: no private host, address or home path under deb/"
+
+  build:
+    needs: [prepare, lint]
+    if: needs.prepare.outputs.skip_build == 'false'
+    runs-on: ubuntu-latest
+    env:
+      RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+    steps:
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache
+          sudo docker system prune --all --force
+          df -h
+
+      - uses: actions/checkout@v4
+
+      - name: Build the packages
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -n "${RELEASE_TAG}" ]]; then
+            deb/build-deb --in-container "${RELEASE_TAG}"
+          else
+            SNAPSHOT=1 deb/build-deb --in-container HEAD
+          fi
+
+      - name: Assert the artifact's own fields
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          debs=(../*.deb gufo_*.deb ../gufo_*.deb)
+          found=0
+          for deb in "${debs[@]}"; do
+            [[ -f "$deb" ]] || continue
+            found=1
+            echo "--- $(basename "$deb")"
+            dpkg-deb -f "$deb" Package Version Architecture Depends | sed 's/^/    /'
+            dpkg-deb -I "$deb" | sed -n '/Package:/,$p' | head -12
+          done
+          [[ "$found" -gt 0 ]] || { echo "no .deb to assert against" >&2; exit 1; }
+
+      - name: lintian
+        # Reports, does not gate: lintian findings on a first out-of-tree build are normal and
+        # each one is worth reading once rather than silencing in bulk.
+        continue-on-error: true
+        run: lintian ../*.deb || true
+
+      - name: Lifecycle matrix against the built artifact
+        run: deb/common/tests/upgrade-units ../*.deb
+
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: gufo-deb-${{ needs.prepare.outputs.tag || 'snapshot' }}
+          path: |
+            ../*.deb
+            ../*.buildinfo
+            ../*.changes
+          if-no-files-found: error
+          retention-days: 30

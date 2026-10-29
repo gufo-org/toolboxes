@@ -1,0 +1,228 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Build the gufo host packages (.deb) from this packaging tree, so the engine repository carries
+# no packaging scaffolding.
+#
+# deb/common/ is the packaging source. At build time it is assembled into <checkout>/debian/ of
+# an engine checkout and dpkg-buildpackage runs there, because that is the layout debian/rules
+# expects (it calls debian/get-revision.sh and debian/gen-changelog.sh by those paths). The
+# engine checkout is the only thing written; this repository stays clean.
+#
+# Every default is an environment override, so a downstream clone changes behaviour without
+# editing this file:
+#
+#   GUFO_REPO       engine remote       default https://github.com/gufo-org/gufo.git
+#   GUFO_SRC        engine checkout     default a fresh shallow clone into a scratch dir
+#   CPU_FLAGS       CFLAGS append       default empty -> dpkg's portable baseline. Set it to
+#                                         your own target (e.g. -march=znver5 -falign-functions=32
+#                                         -pipe) to ship codegen tuned to one machine.
+#   CPP_FLAGS       CPPFLAGS append     default empty
+#   DEBIAN_REVISION debian revision     default 1; bump it for a packaging-only rebuild
+#   DISTRO          changelog distro    default the build host's codename
+#   CHANGELOG_MODE  verify | regen      default regen for a scratch clone, verify for --src
+#   SNAPSHOT        0 | 1               default 0; see deb/gen-deb-ver for why an untagged
+#                                         checkout is refused a release version
+#   APT_IMAGE       builder base image  default debian:trixie
+#
+# Flags: --src DIR, --assemble-only (assemble + run the gates that need no compiler),
+#        --in-container (build inside deb/debian-trixie.Dockerfile), --dry-run (write nothing).
+
+declare -A DEFAULTS
+DEFAULTS["GUFO_REPO"]="https://github.com/gufo-org/gufo.git"
+DEFAULTS["CPU_FLAGS"]=""
+DEFAULTS["CPP_FLAGS"]=""
+DEFAULTS["DEBIAN_REVISION"]="1"
+DEFAULTS["DISTRO"]=""
+DEFAULTS["APT_IMAGE"]="debian:trixie"
+
+usage() { sed -n '3,29p' "$0" | sed 's/^# \{0,1\}//'; exit "${1:-0}"; }
+
+ref=""
+src="${GUFO_SRC:-}"
+src_given=0
+[[ -n "${src}" ]] && src_given=1
+assemble_only=0
+dry_run=0
+in_container=0
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --src)           src="$2"; src_given=1; shift 2 ;;
+    --assemble-only) assemble_only=1; shift ;;
+    --in-container)  in_container=1; shift ;;
+    --dry-run)       dry_run=1; shift ;;
+    -h|--help)       usage 0 ;;
+    -*)              printf 'unknown option: %s\n' "$1" >&2; usage 2 ;;
+    *)               ref="$1"; shift ;;
+  esac
+done
+
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+common_dir="${script_dir}/common"
+container_engine=""
+for engine in podman docker; do
+  if command -v "${engine}" >/dev/null 2>&1; then container_engine="${engine}"; break; fi
+done
+if [[ "${in_container}" == 1 && -z "${container_engine}" ]]; then
+  printf 'error: --in-container was asked for and neither podman nor docker is installed.\n' >&2
+  exit 1
+fi
+
+run() { # run <command...>
+  printf '  + %s\n' "$*"
+  [[ "${dry_run}" == 1 ]] && return 0
+  "$@"
+}
+
+# --- the checkout ------------------------------------------------------------------------------
+scratch=""
+cleanup_scratch() { [[ -n "${scratch}" && -d "${scratch}" ]] && rm -rf "${scratch}"; }
+if [[ "${src_given}" == 1 ]]; then
+  [[ -d "${src}/.git" ]] || { printf 'error: --src %s is not a git checkout.\n' "${src}" >&2; exit 1; }
+  changelog_mode="${CHANGELOG_MODE:-verify}"
+else
+  if [[ "${dry_run}" == 1 ]]; then
+    src="<scratch>/gufo"
+  else
+    scratch="$(mktemp -d "${TMPDIR:-/tmp}/gufo-deb-src.XXXXXX")"
+    trap cleanup_scratch EXIT INT TERM
+    src="${scratch}/gufo"
+  fi
+  changelog_mode="${CHANGELOG_MODE:-regen}"
+fi
+ref="${ref:-$(git -C "${src:-/nonexistent}" describe --tags --exact-match HEAD 2>/dev/null || echo main)}"
+
+printf '==> engine     : %s\n' "${src}"
+printf '==> ref       : %s (%s)\n' "${ref}" "${ref#v}"
+printf '==> workspace : %s\n' "${src}"
+
+if [[ "${src_given}" == 0 ]]; then
+  run git clone --quiet --depth 1 --branch "${ref}" "${GUFO_REPO:-${DEFAULTS[GUFO_REPO]}}" "${src}"
+fi
+[[ "${dry_run}" == 1 && ! -d "${src}" ]] && { printf '==> --dry-run: stopping, there is no checkout to inspect.\n'; exit 0; }
+
+for needed in version.txt CHANGELOG.md; do
+  [[ -f "${src}/${needed}" ]] || { printf 'error: %s is missing from the checkout; %s is part of the release contract.\n' "${src}/${needed}" "${needed}" >&2; exit 1; }
+done
+
+# --- assemble debian/ ---------------------------------------------------------------------------
+printf '==> assembling debian/ from %s\n' "${common_dir}"
+if [[ "${dry_run}" != 1 ]]; then
+  rm -rf "${src}/debian"
+  cp -a "${common_dir}" "${src}/debian"
+  chmod +x "${src}/debian/rules" 2>/dev/null || true
+  find "${src}/debian/tests" -maxdepth 1 -type f -exec chmod +x {} + 2>/dev/null || true
+fi
+
+# The version is derived, never typed: gen-deb-ver reads version.txt from the checkout it was
+# given and refuses an untagged tree unless SNAPSHOT=1 says so on purpose.
+revision="${DEBIAN_REVISION:-${DEFAULTS[DEBIAN_REVISION]}}"
+snapshot="${SNAPSHOT:-0}"
+deb_version="$(SNAPSHOT="${snapshot}" "${script_dir}/gen-deb-ver" "${src}" "${revision}")"
+upstream_version="${deb_version%%-*}"
+if ! . /etc/os-release 2>/dev/null; then VERSION_CODENAME="unstable"; fi
+distro="${DISTRO:-${DEFAULTS[DISTRO]:-${VERSION_CODENAME:-unstable}}}"
+
+printf '==> version   : %s  (distro %s)\n' "${deb_version}" "${distro}"
+printf '==> codegen   : %s\n' "${CPU_FLAGS:-${DEFAULTS[CPU_FLAGS]:-<dpkg portable baseline>}}"
+
+# The changelog is generated, not hand-edited, and a mismatch fails here rather than ten
+# minutes into a compile.
+head_version="$(dpkg-parsechangelog -l "${src}/debian/changelog" -SVersion 2>/dev/null || true)"
+if [[ -z "${head_version}" ]]; then
+  printf 'error: could not parse debian/changelog; is dpkg-dev installed?\n' >&2
+  exit 1
+fi
+if [[ "${head_version}" != "${deb_version}" ]]; then
+  if [[ "${changelog_mode}" == "regen" ]]; then
+    printf '==> changelog : %s -> %s (generated from version.txt)\n' "${head_version}" "${deb_version}"
+    run env DEBIAN_REVISION="${deb_version##*-}" "${src}/debian/gen-changelog.sh" "${upstream_version}"
+  else
+    cat >&2 <<EOF
+error: debian/changelog is at ${head_version} but this checkout should produce ${deb_version}.
+       A package whose version does not name what it contains is a silent no-op install: apt
+       answers "0 upgraded" and the host keeps the old binary.
+       Generate the entry: CHANGELOG_MODE=regen $0 ${ref}
+       (or release automation does it, which is the normal path.)
+EOF
+    exit 1
+  fi
+fi
+
+if [[ "${assemble_only}" == 1 ]]; then
+  printf '==> --assemble-only: compiled nothing.\n'
+  printf '    gates to run against the assembled tree:\n'
+  printf '      debian/tests/upgrade-units                 # lifecycle matrix, stubs, no root\n'
+  printf '      deb/tests/apt-pin-scope.sh               # apt pin scope + negative control\n'
+  exit 0
+fi
+
+# --- build -----------------------------------------------------------------------------------
+# Parallelism, computed. `dh_auto_build --parallel` in debian/rules falls back to nproc when the
+# caller says nothing, and the heaviest units in this build are HIP kernels at -O3 that want
+# gigabytes each. On a host holding model weights in unified memory an uncapped build is an
+# out-of-memory event that lands on whatever else is running -- measured, not theorised: 32
+# concurrent jobs against ~12 GiB MemAvailable killed a served instance on 2026-10-26.
+# PER_JOB_GiB is an estimate and is printed so the arithmetic can be argued with, not the number.
+per_job="${PER_JOB_GiB:-3}"
+reserve="${RESERVE_GiB:-4}"
+avail_gib="$(awk '/MemAvailable/{print int($2/1024/1024)}' /proc/meminfo)"
+jobs_by_mem=$(( (avail_gib - reserve) / per_job ))
+[[ "${jobs_by_mem}" -lt 0 ]] && jobs_by_mem=0
+cap="$(nproc)"; [[ "${cap}" -gt 16 ]] && cap=16
+jobs="${JOBS:-${cap}}"
+[[ "${jobs_by_mem}" -lt "${jobs}" ]] && jobs="${jobs_by_mem}"
+printf '==> parallelism: nproc=%s MemAvailable=%sGiB reserve=%sGiB per-job=%sGiB -> -j%s\n' \
+  "$(nproc)" "${avail_gib}" "${reserve}" "${per_job}" "${jobs}"
+if [[ "${jobs}" -lt 1 ]]; then
+  printf 'error: MemAvailable=%sGiB leaves no safe -j at %sGiB per job with %sGiB reserved.\n' "${avail_gib}" "${per_job}" "${reserve}" >&2
+  printf '       take the window when the machine is free, or use --in-container, which caps the\n'
+  printf '       build inside its own cgroup so an out-of-memory decision cannot reach a neighbour.\n' >&2
+  exit 1
+fi
+
+build_opts="noautodbgsym parallel=${jobs}"
+[[ "${changelog_mode}" == "regen" ]] && build_opts+=" gufo-changelog-regen"
+
+build_cmd=(env
+  "DEB_CFLAGS_APPEND=${CPU_FLAGS:-${DEFAULTS[CPU_FLAGS]}}"
+  "DEB_CPPFLAGS_APPEND=${CPP_FLAGS:-${DEFAULTS[CPP_FLAGS]}}"
+  "DEB_BUILD_OPTIONS=${build_opts}"
+  dpkg-buildpackage -b -us -uc)
+
+if [[ "${in_container}" == 1 ]]; then
+  image_tag="gufo-deb-builder:local"
+  run "${container_engine}" build -t "${image_tag}" \
+      --build-arg "APT_IMAGE=${APT_IMAGE:-${DEFAULTS[APT_IMAGE]}}" \
+      -f "${script_dir}/debian-trixie.Dockerfile" "${script_dir}"
+  # --memory keeps the kernel's out-of-memory decision inside this container's cgroup.
+  mem_max="${MEM_MAX:-12g}"
+  printf '==> container   : %s, --memory %s (an out-of-memory event stays inside the container)\n' "${image_tag}" "${mem_max}"
+  run "${container_engine}" run --rm --memory "${mem_max}" --memory-swap 0 -v "${src}:/src:rw" -w /src "${image_tag}" \
+      env DEB_CFLAGS_APPEND="${CPU_FLAGS:-}" DEB_CPPFLAGS_APPEND="${CPP_FLAGS:-}" \
+          DEB_BUILD_OPTIONS="${build_opts}" dpkg-buildpackage -b -us -uc
+else
+  ( cd "${src}" && run "${build_cmd[@]}" )
+fi
+
+if [[ "${dry_run}" == 1 ]]; then
+  printf '\n==> --dry-run: nothing was built and nothing moved.\n'
+  exit 0
+fi
+
+# --- artifacts: name them, hash them, and say what the hashes are for -----------------------
+out_dir="$(dirname "${src}")"
+printf '\n==> artifacts\n'
+found=0
+for artifact in "${out_dir}"/gufo*_"${deb_version}"_*; do
+  [[ -e "${artifact}" ]] || continue
+  found=1
+  printf '    %-56s sha256:%s\n' "$(basename "${artifact}")" "$(sha256sum "${artifact}" | cut -c1-16)"
+done
+if [[ "${found}" == 0 ]]; then
+  printf 'error: the build produced no %s artifacts; refusing to report success.\n' "${deb_version}" >&2
+  exit 1
+fi
+printf '\nKeep the .buildinfo beside the .deb. A rate measured against a binary whose\n'
+printf 'sha256 is not recorded here is not a result — it is an anecdote about a mystery file.\n'

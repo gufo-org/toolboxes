@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# The package version, derived from the source it is built from.
+#
+#   deb/gen-deb-ver <engine-checkout> [debian-revision]
+#
+# version.txt in the engine checkout is the authority for the upstream part — the same file the
+# build bakes into the binary and the same file debian/rules compares debian/changelog against.
+# The debian revision is the packager's counter: it moves when the packaging changes and
+# upstream did not release, which is the only thing that keeps `apt' from answering
+# "0 upgraded" on a build that genuinely differs from the installed one.
+#
+# A checkout that is not exactly on a release tag cannot honestly claim `<ver>-1': the next
+# build from the same moving ref would print the same string for different bytes. Two honest
+# answers, and this picks between them instead of staying silent:
+#
+#   SNAPSHOT=1   -> <ver>+git<short-sha>-1     (additive, sorts after <ver>)
+#   default      -> refuse, and say which tag or --snapshot was meant
+
+src="${1:-}"
+revision="${2:-1}"
+
+if [[ -z "${src}" || ! -d "${src}" ]]; then
+  printf 'usage: %s <engine-checkout> [debian-revision]\n' "$0" >&2
+  exit 2
+fi
+
+if [[ ! "${revision}" =~ ^[0-9][0-9a-zA-Z.+~]*$ ]]; then
+  printf 'error: debian revision %s is not a valid revision string.\n' "${revision}" >&2
+  exit 2
+fi
+
+version_file="${src}/version.txt"
+[[ -f "${version_file}" ]] || { printf 'error: %s not found; version.txt is the version authority.\n' "${version_file}" >&2; exit 1; }
+upstream="$(tr -d '[:space:]' < "${version_file}")"
+
+if [[ ! "${upstream}" =~ ^[0-9]+(\.[0-9]+)+$ ]]; then
+  printf 'error: version.txt holds %s, expected a dotted numeric version.\n' "${upstream}" >&2
+  exit 1
+fi
+
+sha="$(git -C "${src}" rev-parse --short=8 HEAD 2>/dev/null || true)"
+[[ -n "${sha}" ]] || { printf 'error: %s is not a git checkout, so the version cannot be tied to a commit.\n' "${src}" >&2; exit 1; }
+
+exact_tag="$(git -C "${src}" describe --tags --exact-match HEAD 2>/dev/null || true)"
+if [[ "${exact_tag}" != "v${upstream}" && "${SNAPSHOT:-0}" != "1" ]]; then
+  cat >&2 <<EOF
+error: this checkout is at ${sha} and is not tagged v${upstream}, but version.txt says
+       ${upstream}. Building now would publish "${upstream}-${revision}" for bytes that no
+       release carries, and a later build from the same ref would print the identical string.
+       Either build a tag, or accept the additive stamp with SNAPSHOT=1
+       (-> ${upstream}+git${sha}-${revision}).
+EOF
+  exit 1
+fi
+
+if [[ "${exact_tag}" == "v${upstream}" || -z "${exact_tag}" && "${SNAPSHOT:-0}" != "1" ]]; then
+  printf '%s-%s\n' "${upstream}" "${revision}"
+else
+  printf '%s+git%s-%s\n' "${upstream}" "${sha}" "${revision}"
+fi
