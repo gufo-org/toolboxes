@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+# Run inside the builder image: deb/build-deb vX.Y.Z /absolute/output/directory
+set -euo pipefail
+[[ $# == 2 && $1 =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || {
+  echo 'usage: deb/build-deb vX.Y.Z OUTPUT' >&2; exit 2;
+}
+tag=$1
+version=${tag#v}
+mkdir -p "$2"
+out=$(realpath "$2")
+work=$(mktemp -d)
+trap 'rm -rf "$work"' EXIT
+cd "$work"
+git clone --depth 1 --branch "$tag" https://github.com/gufo-org/gufo.git source
+[[ $(tr -d '[:space:]' < source/version.txt) == "$version" ]]
+revision=$(git -C source rev-parse HEAD)
+# Fixed conservative parallelism; the caller supplies a container memory limit.
+jobs=${JOBS:-2}
+[[ $jobs =~ ^[1-9][0-9]*$ ]] || { echo 'JOBS must be positive' >&2; exit 2; }
+cmake -S source -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_PREFIX_PATH=/opt/rocm/core-10.1 \
+  -DCMAKE_HIP_COMPILER=/opt/rocm/core-10.1/lib/llvm/bin/clang++ -DCMAKE_HIP_COMPILER_ROCM_ROOT=/opt/rocm/core-10.1 \
+  -DCMAKE_HIP_FLAGS=--rocm-path=/opt/rocm/core-10.1 -DCMAKE_SKIP_INSTALL_RPATH=ON -DBUILD_TESTING=OFF -DGUFO_BUILD_TOOLS=OFF \
+  -DGUFO_RELEASE_VERSION="$version" -DGUFO_REVISION="$revision"
+cmake --build build --parallel "$jobs" --target gufo
+DESTDIR="$work/package" cmake --install build --strip
+mkdir -p package/DEBIAN package/etc/ld.so.conf.d package/usr/share/doc/gufo debian
+printf '/opt/rocm/core-10.1/lib\n' > package/etc/ld.so.conf.d/gufo-rocm.conf
+printf '/etc/ld.so.conf.d/gufo-rocm.conf\n' > package/DEBIAN/conffiles
+printf 'activate ldconfig\n' > package/DEBIAN/triggers
+cp source/LICENSE package/usr/share/doc/gufo/copyright
+printf 'Source: gufo\nSection: utils\nPriority: optional\nMaintainer: Gufo Maintainers <maintainers@gufo.dev>\n\nPackage: gufo\nArchitecture: amd64\nDescription: Strix Halo inference engine\n' > debian/control
+# Discover linked libraries through shlibs; also require AMD runtime and GPU kernel data.
+depends=$(dpkg-shlibdeps -O -l/opt/rocm/core-10.1/lib -epackage/usr/bin/gufo)
+depends=${depends#shlibs:Depends=}
+for runtime in amdrocm-runtime10.1 amdrocm-blas10.1-gfx1151; do
+  runtime_version=$(dpkg-query -W -f='${Version}' "$runtime")
+  depends+="${depends:+, }$runtime (>= $runtime_version)"
+done
+cat > package/DEBIAN/control <<CONTROL
+Package: gufo
+Version: $version-1
+Architecture: amd64
+Maintainer: Gufo Maintainers <maintainers@gufo.dev>
+Section: utils
+Priority: optional
+Homepage: https://github.com/gufo-org/gufo
+Depends: $depends, ffmpeg
+Installed-Size: $(du -sk package/usr | cut -f1)
+Description: Strix Halo inference engine
+ Local inference for AMD Strix Halo (gfx1151).
+ Includes the executable, runtime data and licenses. No service is started.
+CONTROL
+export SOURCE_DATE_EPOCH
+SOURCE_DATE_EPOCH=$(git -C source show -s --format=%ct HEAD)
+name="gufo_${version}-1_amd64.deb"
+dpkg-deb --root-owner-group --build package "$out/$name"
+(cd "$out" && sha256sum "$name" > "$name.sha256")

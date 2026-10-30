@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# Run as root in the fresh runtime image; installation resolves declared Depends.
+set -euo pipefail
+trap 'echo "Debian package verification failed at line $LINENO" >&2' ERR
+[[ $# == 2 ]] || { echo 'usage: deb/verify-deb PACKAGE VERSION' >&2; exit 2; }
+deb=$(realpath "$1")
+version=$2
+(cd "$(dirname "$deb")" && sha256sum --check "$(basename "$deb").sha256")
+[[ $(dpkg-deb -f "$deb" Package) == gufo ]]
+[[ $(dpkg-deb -f "$deb" Version) == "$version-1" ]]
+[[ $(dpkg-deb -f "$deb" Architecture) == amd64 ]]
+apt-get update
+apt-get install -y --no-install-recommends "$deb"
+ldd /usr/bin/gufo > /tmp/gufo-ldd
+cat /tmp/gufo-ldd
+if grep -E 'not found|/nix/store/' /tmp/gufo-ldd; then exit 1; fi
+actual=$(gufo --version)
+[[ $actual == "gufo version $version ("* ]] || { echo "Unexpected identity: $actual" >&2; exit 1; }
+gufo --help > /dev/null
+for file in /usr/share/licenses/gufo/LICENSE /usr/share/licenses/gufo/NOTICE \
+            /usr/share/licenses/gufo/THIRD_PARTY_NOTICES.md /usr/share/doc/gufo/copyright; do
+  test -s "$file"
+done
+test -s /usr/share/gufo/eval/antirez-ds4.json
+test -s /usr/share/gufo/models/minimax_h3/MINIMAX_H3_FL2VA_BF16.source-manifest.json
+dpkg -L gufo > /tmp/gufo-files
+if grep -E '/(usr/)?lib/systemd/|/etc/gufo|/nix/store/' /tmp/gufo-files; then exit 1; fi
+apt-get remove -y gufo
+test ! -e /usr/bin/gufo
+apt-get purge -y gufo
+test ! -e /etc/ld.so.conf.d/gufo-rocm.conf

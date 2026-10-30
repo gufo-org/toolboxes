@@ -11,7 +11,17 @@ on:
         required: true
         type: string
       windows-only:
-        description: Rebuild and upload only the Windows ZIP (skip OCI images)
+        description: Rebuild and upload only the Windows ZIP
+        required: false
+        type: boolean
+        default: false
+      deb-only:
+        description: Build and upload only the Debian package
+        required: false
+        type: boolean
+        default: false
+      replace-deb-assets:
+        description: Replace the Debian package and checksum already attached to this tag
         required: false
         type: boolean
         default: false
@@ -44,11 +54,18 @@ jobs:
         id: release
         env:
           RELEASE_TAG: ${{ github.event.client_payload.tag || inputs.tag }}
+          WINDOWS_ONLY: ${{ inputs.windows-only || false }}
+          DEB_ONLY: ${{ inputs.deb-only || false }}
         shell: bash
         run: |
           set -euo pipefail
           if [[ ! "$RELEASE_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
             echo "Expected a Gufo release tag like v0.2.0, got: $RELEASE_TAG" >&2
+            exit 1
+          fi
+
+          if [[ "$WINDOWS_ONLY" == true && "$DEB_ONLY" == true ]]; then
+            echo "Choose either windows-only or deb-only, not both" >&2
             exit 1
           fi
 
@@ -60,6 +77,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
   build-windows:
+    if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.deb-only) }}
     needs: prepare
     permissions:
       actions: read
@@ -117,8 +135,72 @@ jobs:
             "release/gufo-${RELEASE_TAG}-windows-x86_64.zip" \
             "release/gufo-${RELEASE_TAG}-windows-x86_64.zip.sha256"
 
-  build-and-push:
+  build-deb:
     if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.windows-only) }}
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    env:
+      RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+      RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Debian builder and runtime test images
+        run: |
+          docker build --target builder -t gufo-deb-builder -f deb/Dockerfile deb
+          docker build --target runtime -t gufo-deb-runtime -f deb/Dockerfile deb
+
+      - name: Build the release package
+        run: |
+          mkdir -p release
+          docker run --rm --memory 12g --memory-swap 12g \
+            -v "$PWD:/work" gufo-deb-builder \
+            deb/build-deb "$RELEASE_TAG" /work/release
+
+      - name: Verify installation in a fresh Debian container
+        run: |
+          docker run --rm -v "$PWD:/work" gufo-deb-runtime \
+            deb/verify-deb "/work/release/gufo_${RELEASE_VERSION}-1_amd64.deb" "$RELEASE_VERSION"
+
+      - name: Preserve Debian release artifacts
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: deb-release-${{ needs.prepare.outputs.tag }}
+          path: |
+            release/*.deb
+            release/*.deb.sha256
+          if-no-files-found: error
+          compression-level: 0
+
+      - name: Create Gufo release app token
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          owner: gufo-org
+          repositories: gufo
+          permission-contents: write
+
+      - name: Attach Debian assets to the Gufo release
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          REPLACE_DEB_ASSETS: ${{ github.event_name == 'workflow_dispatch' && inputs.replace-deb-assets }}
+        working-directory: release
+        run: |
+          sha256sum --check "gufo_${RELEASE_VERSION}-1_amd64.deb.sha256"
+          gh release view "$RELEASE_TAG" --repo gufo-org/gufo
+          upload_args=()
+          if [[ "$REPLACE_DEB_ASSETS" == true ]]; then
+            upload_args+=(--clobber)
+          fi
+          gh release upload "$RELEASE_TAG" --repo gufo-org/gufo "${upload_args[@]}" \
+            "gufo_${RELEASE_VERSION}-1_amd64.deb" \
+            "gufo_${RELEASE_VERSION}-1_amd64.deb.sha256"
+
+  build-and-push:
+    if: ${{ !(github.event_name == 'workflow_dispatch' && (inputs.windows-only || inputs.deb-only)) }}
     needs: prepare
     runs-on: ubuntu-latest
     strategy:
