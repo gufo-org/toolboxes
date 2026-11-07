@@ -28,11 +28,11 @@
         "nixpkgs-rocm10": "nixpkgs-rocm10"
       },
       "locked": {
-        "lastModified": 1793958245,
-        "narHash": "sha256-9UZP3gbgMxvqMVHyUSoRRB3xRxRGzHf0+dE0H1XHBiA=",
+        "lastModified": 1794049346,
+        "narHash": "sha256-LkBBpr/TIDNKoquwGbUnG38hPInOk51XgVJHXHB1VwM=",
         "owner": "gufo-org",
         "repo": "gufo",
-        "rev": "211dba49fa736466d55feb66870aeeff05bef38a",
+        "rev": "61c0de89bd48592d58fc92529a246bed4bdbd00e",
         "type": "github"
       },
       "original": {
