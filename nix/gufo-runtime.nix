@@ -13,6 +13,10 @@
 }:
 let
   packageSuffix = if variant == null then "" else "-${variant}";
+  # The extension SDK (gufo-org/gufo#1075) pins the engine's toolchain, so
+  # `gufo extension install` can build modules inside the image. Older engine
+  # pins have no `sdk` output.
+  sdk = engine.sdk or null;
   imageArgs = {
     name = "ghcr.io/gufo-org/toolboxes/gufo-runtime";
     tag = imageTag;
@@ -21,12 +25,16 @@ let
       engine
       p.radeontop
     ]
+    ++ p.lib.optionals (sdk != null) [
+      sdk
+      p.git
+    ]
     ++ commonRuntimePkgs;
     extraCommands = ociFilesystemCommands;
     fakeRootCommands = commonArchiveOwnershipCommands;
     config = {
       Labels = imageLabels;
-      Env = gpuEnv;
+      Env = gpuEnv ++ p.lib.optional (sdk != null) "GUFO_SDK_DIR=${sdk}/lib/gufo/sdk";
       Cmd = [ "/bin/bash" ];
       User = containerUser;
       WorkingDir = "/home/gufo";
