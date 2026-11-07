@@ -81,6 +81,26 @@ replacing the final command, for example:
 gufo bench --model /models/model.gguf -p 512 -n 128
 ```
 
+### Extension modules
+
+The runtime image carries the engine's extension SDK and its toolchain, so it
+can build and load [extension modules](https://github.com/gufo-org/gufo/blob/main/docs/extension-modules.md)
+(experimental). Mount a volume for the store so installed extensions survive
+the container:
+
+```sh
+podman volume create gufo-extensions
+podman run --rm -it \
+  --userns=keep-id:uid=1000,gid=1000 \
+  -v gufo-extensions:/home/gufo/.local/share/gufo/extensions \
+  ghcr.io/gufo-org/toolboxes/gufo-runtime:edge \
+  gufo extension install https://github.com/gufo-org/lfm3-gufo-extension@<revision>
+```
+
+Add the same volume to the run commands above to load the installed
+extensions. Modules match one engine build: after pulling a new image, run
+`gufo extension update` with the volume mounted.
+
 ## Development image
 
 Mount a checkout owned by UID 1000 and start the default shell:
