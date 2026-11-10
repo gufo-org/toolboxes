@@ -37,6 +37,13 @@ RUN git init /tmp/rocm-cmake \
          && cmake --install "/tmp/build-$library" || exit 1; \
        done \
     && rm -rf /tmp/rocm-cmake /tmp/cmake-build /tmp/rocm-libraries /tmp/build-*
+# Install rustup without a default toolchain. The release's rust-toolchain.toml
+# selects the compiler when build-deb enters the checked-out source directory.
+ENV CARGO_HOME=/opt/cargo RUSTUP_HOME=/opt/rustup
+ENV PATH="/opt/cargo/bin:${PATH}"
+RUN curl --proto '=https' --tlsv1.2 -fsSL https://sh.rustup.rs -o /tmp/rustup-init.sh \
+    && sh /tmp/rustup-init.sh -y --profile minimal --default-toolchain none --no-modify-path \
+    && rm /tmp/rustup-init.sh
 WORKDIR /work
 
 FROM base AS runtime

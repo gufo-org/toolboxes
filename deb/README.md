@@ -17,6 +17,9 @@ The native build uses AMD's ROCm 10.1 Debian 13 packages, including the
 `gfx1151` BLAS kernel libraries. The builder installs the missing header-only
 libraries from the pinned upstream 10.1 source release. It does not include the additional ROCr patch
 applied by the Nix build, so it is not identical to the OCI runtime.
+The builder also provides rustup; `build-deb` installs the Rust toolchain and
+components selected by the release's `rust-toolchain.toml` before configuring
+CMake. Releases without that file skip the Rust toolchain download.
 
 ## Build and verify locally
 
