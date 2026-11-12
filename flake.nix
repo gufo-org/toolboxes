@@ -130,6 +130,11 @@
         # glibcLocales carries the archive; without this pointer the images
         # ship a locale they cannot load and every shell warns about it.
         "LOCALE_ARCHIVE=${pkgs.${system}.glibcLocales}/lib/locale/locale-archive"
+        # nixpkgs' curl and git (and so `gufo extension install` from a Git
+        # or registry source) only find the cacert bundle through this; without
+        # it every HTTPS fetch fails with "unable to get local issuer
+        # certificate".
+        "SSL_CERT_FILE=${pkgs.${system}.cacert}/etc/ssl/certs/ca-bundle.crt"
         "HOME=/home/gufo"
         "USER=gufo"
         "NIX_REMOTE=local"
