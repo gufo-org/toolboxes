@@ -16,6 +16,9 @@ let
   # XRT with its amdxdna plugin, as the engine links it. Engine pins before
   # the NPU runtime have none.
   xrt = engine.xrt or null;
+  # mlir-aie (IRON) and Peano, for compiling NPU designs; absent before Gufo
+  # passed them through.
+  iron = engine.iron or null;
   imageArgs = {
     name = "ghcr.io/gufo-org/toolboxes/gufo-dev";
     tag = imageTag;
@@ -40,6 +43,7 @@ let
       xrt
       p.libuuid
     ]
+    ++ p.lib.optional (iron != null) iron
     ++ commonRuntimePkgs;
     extraCommands = ociFilesystemCommands;
     fakeRootCommands = commonArchiveOwnershipCommands;
@@ -54,7 +58,12 @@ let
         "GUFO_ROCWMMA_ROOT=${p.rocmPackages.rocwmma}"
       ]
       # CMake finds XRT here when building Gufo, and XRT its amdxdna plugin.
-      ++ p.lib.optional (xrt != null) "XILINX_XRT=${xrt}/opt/xilinx/xrt";
+      ++ p.lib.optional (xrt != null) "XILINX_XRT=${xrt}/opt/xilinx/xrt"
+      # CMake compiles Gufo's NPU designs with this Python (cmake/GufoNpuDesigns.cmake).
+      ++ p.lib.optionals (iron != null) [
+        "GUFO_IRON_PYTHON=${iron}/bin/python3"
+        "PEANO_INSTALL_DIR=${iron.peano}"
+      ];
       Cmd = [ "/bin/bash" ];
       User = containerUser;
       WorkingDir = "/home/gufo";
