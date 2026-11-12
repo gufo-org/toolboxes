@@ -9,6 +9,7 @@ are intentionally unsupported.
 - Linux kernel 6.18.4 or newer
 - Podman or Docker
 - `/dev/kfd` and an AMD `/dev/dri/renderD*` node for GPU images
+- `/dev/accel/accel0` (the `amdxdna` driver) for the NPU
 
 Every container runs as `gufo`, UID/GID `1000:1000`. The Podman examples use
 `--userns=keep-id:uid=1000,gid=1000` to map the invoking rootless user to that
@@ -39,6 +40,7 @@ Pass the host device nodes and their numeric group owners to the container:
 --userns=keep-id:uid=1000,gid=1000 \
 --device /dev/kfd \
 --device /dev/dri \
+--device /dev/accel/accel0 \
 --group-add keep-groups \
 --ulimit memlock=-1
 ```
@@ -54,11 +56,12 @@ gpu_gid=$(stat -c '%g' /dev/kfd)
 
 --device /dev/kfd \
 --device /dev/dri \
+--device /dev/accel/accel0 \
 --group-add "$gpu_gid" \
 --ulimit memlock=-1
 ```
 
-On most hosts `/dev/kfd` and `/dev/dri/renderD*` share one group; check both
+On most hosts `/dev/kfd`, `/dev/dri/renderD*` and `/dev/accel/accel0` share one group; check each
 with `stat -c '%g'` and pass a `--group-add` for each distinct GID. Writable
 bind mounts must be accessible to UID 1000, and files the container creates
 are owned by `1000:1000` on the host.
@@ -70,6 +73,7 @@ podman run --rm -it \
   --userns=keep-id:uid=1000,gid=1000 \
   --device /dev/kfd \
   --device /dev/dri \
+  --device /dev/accel/accel0 \
   --group-add keep-groups \
   --ulimit memlock=-1 \
   -v /path/to/models:/models:ro \

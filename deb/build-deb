@@ -34,9 +34,26 @@ printf '/opt/rocm/core-10.1/lib\n' > package/etc/ld.so.conf.d/gufo-rocm.conf
 printf '/etc/ld.so.conf.d/gufo-rocm.conf\n' > package/DEBIAN/conffiles
 printf 'activate ldconfig\n' > package/DEBIAN/triggers
 cp source/LICENSE package/usr/share/doc/gufo/copyright
+# The NPU runtime links XRT. Ship a private copy of the libraries the builder
+# made: libxrt_coreutil finds libxrt_core and the amdxdna plugin beside itself,
+# so this never conflicts with an XRT installed in /opt/xilinx/xrt. Releases
+# before the NPU runtime link no XRT.
+shlib_inputs=(-epackage/usr/bin/gufo)
+xrt_lib=/usr/lib/gufo/xrt/lib
+if [[ -d source/src/core/npu ]]; then
+  mkdir -p "package$xrt_lib" package/usr/share/licenses/gufo/third-party
+  for lib in libxrt_coreutil libxrt_core libxrt_driver_xdna; do
+    cp -a /opt/xilinx/xrt/lib/"$lib".so.2* "package$xrt_lib/"
+  done
+  for lib in "package$xrt_lib"/*.so.2.*; do shlib_inputs+=("-e$lib"); done
+  cp /src/xdna-driver/xrt/LICENSE package/usr/share/licenses/gufo/third-party/LICENSE.xrt
+  printf '%s\n' "$xrt_lib" > package/etc/ld.so.conf.d/gufo-xrt.conf
+  printf '/etc/ld.so.conf.d/gufo-xrt.conf\n' >> package/DEBIAN/conffiles
+fi
 printf 'Source: gufo\nSection: utils\nPriority: optional\nMaintainer: Gufo Maintainers <maintainers@gufo.dev>\n\nPackage: gufo\nArchitecture: amd64\nDescription: Strix Halo inference engine\n' > debian/control
-# Discover linked libraries through shlibs; also require AMD runtime and GPU kernel data.
-depends=$(dpkg-shlibdeps -O -l/opt/rocm/core-10.1/lib -epackage/usr/bin/gufo)
+# Discover linked libraries through shlibs; libraries in the package tree (the
+# bundled XRT) need no dependency. Also require AMD runtime and GPU kernel data.
+depends=$(dpkg-shlibdeps -O -Spackage "-lpackage$xrt_lib" -l/opt/rocm/core-10.1/lib "${shlib_inputs[@]}")
 depends=${depends#shlibs:Depends=}
 for runtime in amdrocm-runtime10.1 amdrocm-blas10.1-gfx1151; do
   runtime_version=$(dpkg-query -W -f='${Version}' "$runtime")

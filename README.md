@@ -67,6 +67,7 @@ podman run --rm -it \
   --userns=keep-id:uid=1000,gid=1000 \
   --device /dev/kfd \
   --device /dev/dri \
+  --device /dev/accel/accel0 \
   --group-add keep-groups \
   --ulimit memlock=-1 \
   -v /path/to/models:/models:ro \
@@ -74,7 +75,8 @@ podman run --rm -it \
   gufo diagnose
 ```
 
-Replace `renderD128` if the AMD render node has another number. Run a model by
+Replace `renderD128` if the AMD render node has another number.
+`/dev/accel/accel0` is the XDNA NPU; omit it on hosts without one. Run a model by
 replacing the final command, for example:
 
 ```sh
@@ -110,6 +112,7 @@ podman run --rm -it \
   --userns=keep-id:uid=1000,gid=1000 \
   --device /dev/kfd \
   --device /dev/dri \
+  --device /dev/accel/accel0 \
   --group-add keep-groups \
   --ulimit memlock=-1 \
   -v "$PWD:/workspace" \
@@ -129,6 +132,7 @@ gpu_gid=$(stat -c '%g' /dev/kfd)
 docker run --rm -it \
   --device /dev/kfd \
   --device /dev/dri \
+  --device /dev/accel/accel0 \
   --group-add "$gpu_gid" \
   --ulimit memlock=-1 \
   -v /path/to/models:/models:ro \
@@ -141,14 +145,16 @@ or serve the OpenAI-compatible API with the same flags:
 
 ```sh
 docker run --rm -it \
-  --device /dev/kfd --device /dev/dri --group-add "$gpu_gid" \
+  --device /dev/kfd --device /dev/dri --device /dev/accel/accel0 \
+  --group-add "$gpu_gid" \
   --ulimit memlock=-1 \
   -v /path/to/models:/models:ro \
   ghcr.io/gufo-org/toolboxes/gufo-runtime:edge \
   gufo prompt --model /models/model.gguf --prompt "Hello" --max-tokens 128
 
 docker run --rm -p 8080:8080 \
-  --device /dev/kfd --device /dev/dri --group-add "$gpu_gid" \
+  --device /dev/kfd --device /dev/dri --device /dev/accel/accel0 \
+  --group-add "$gpu_gid" \
   --ulimit memlock=-1 \
   -v /path/to/models:/models:ro \
   ghcr.io/gufo-org/toolboxes/gufo-runtime:edge \
@@ -165,7 +171,8 @@ symlinks dangling and the model fails to open:
 
 ```sh
 docker run --rm \
-  --device /dev/kfd --device /dev/dri --group-add "$gpu_gid" \
+  --device /dev/kfd --device /dev/dri --device /dev/accel/accel0 \
+  --group-add "$gpu_gid" \
   --ulimit memlock=-1 \
   -v /path/to/models--org--repo:/models:ro \
   ghcr.io/gufo-org/toolboxes/gufo-runtime:edge \
@@ -180,6 +187,7 @@ extra flags:
 docker run --rm -it \
   --device /dev/kfd \
   --device /dev/dri \
+  --device /dev/accel/accel0 \
   --group-add "$gpu_gid" \
   --ulimit memlock=-1 \
   -v "$PWD:/workspace" \
