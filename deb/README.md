@@ -17,6 +17,12 @@ The native build uses AMD's ROCm 10.1 Debian 13 packages, including the
 `gfx1151` BLAS kernel libraries. The builder installs the missing header-only
 libraries from the pinned upstream 10.1 source release. It does not include the additional ROCr patch
 applied by the Nix build, so it is not identical to the OCI runtime.
+For the XDNA NPU, the builder compiles XRT and its amdxdna plugin with
+xdna-driver's scripts, at the pair Gufo's Nix build pins and with the same
+heap patch (no memlock limit needed). The package ships a private copy of the
+three XRT libraries in `/usr/lib/gufo/xrt/lib`, so it needs no XRT package and
+never conflicts with one in `/opt/xilinx/xrt`. The NPU itself needs only the
+kernel's `amdxdna` driver.
 The builder also provides rustup; `build-deb` installs the Rust toolchain and
 components selected by the release's `rust-toolchain.toml` before configuring
 CMake. Releases without that file skip the Rust toolchain download.

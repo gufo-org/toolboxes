@@ -32,7 +32,7 @@ sudo usermod -aG video,render $USER
 Verify device existence:
 ```bash
 # GPU ROCm / KFD interface
-ls -l /dev/kfd /dev/dri/renderD*
+ls -l /dev/kfd /dev/dri/renderD* /dev/accel/accel0
 
 # XDNA2 NPU interface
 ls -l /dev/accel/accel* /dev/amdxdna 2>/dev/null || echo "NPU driver not loaded"

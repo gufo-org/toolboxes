@@ -10,7 +10,7 @@ Environment=PORT=8080
 # Run inside the gufo-runtime container using podman
 ExecStart=/usr/bin/podman run --rm --name gufo-serve \
   --userns=keep-id:uid=1000,gid=1000 \
-  --device /dev/kfd --device /dev/dri \
+  --device /dev/kfd --device /dev/dri --device /dev/accel/accel0 \
   --group-add keep-groups --ulimit memlock=-1 \
   -v %h/.local/share/gufo/models:/models:ro,z \
   -p 127.0.0.1:${PORT}:${PORT} \

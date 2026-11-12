@@ -6,7 +6,35 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
     && printf 'deb [arch=amd64 signed-by=/etc/apt/keyrings/amdrocm.gpg] https://stable.repo.amd.com/rocm/core/packages/debian13/ stable main\n' > /etc/apt/sources.list.d/amdrocm.list \
     && rm -rf /var/lib/apt/lists/*
 
-FROM base AS builder
+# XRT and its amdxdna plugin for the NPU runtime, built with xdna-driver's own
+# scripts at the pair Gufo's Nix build pins (.devops/nix/xrt): xdna-driver
+# main and the XRT commit it carries as a submodule.
+FROM base AS xrt
+ARG XDNA_DRIVER_REV=010b7d2fbcb10b5412cdf829e0a53728f43de01d
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential cmake git pkg-config python3 sudo file \
+    && rm -rf /var/lib/apt/lists/*
+RUN git init /src/xdna-driver \
+    && git -C /src/xdna-driver remote add origin https://github.com/amd/xdna-driver.git \
+    && git -C /src/xdna-driver fetch --depth 1 origin "$XDNA_DRIVER_REV" \
+    && git -C /src/xdna-driver checkout FETCH_HEAD \
+    && git -C /src/xdna-driver submodule update --init --recursive --depth 1 xrt
+# As in the Nix build: populate the 64 MiB device heap instead of locking it,
+# so the NPU needs no raised memlock limit.
+RUN sed -i 's/MAP_SHARED | MAP_LOCKED | flags/MAP_SHARED | MAP_POPULATE | flags/' \
+      /src/xdna-driver/src/shim/buffer.cpp \
+    && grep -q 'MAP_SHARED | MAP_POPULATE | flags' /src/xdna-driver/src/shim/buffer.cpp
+RUN apt-get update \
+    && /src/xdna-driver/xrt/src/runtime_src/tools/scripts/xrtdeps.sh \
+    && rm -rf /var/lib/apt/lists/*
+RUN cd /src/xdna-driver/xrt/build && ./build.sh -npu -opt -noctest \
+    && apt-get update && apt-get install -y --no-install-recommends ./Release/xrt_*.deb \
+    && cd /src/xdna-driver/build && ./build.sh -release -nokmod -novxdna \
+    && apt-get install -y --no-install-recommends ./Release/xrt_plugin*.deb \
+    && rm -rf /var/lib/apt/lists/* /src/xdna-driver/xrt/build/Release /src/xdna-driver/build/Release \
+    && test -e /opt/xilinx/xrt/lib/libxrt_driver_xdna.so.2
+
+FROM xrt AS builder
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential dpkg-dev cmake ninja-build pkg-config python3 git binutils \
     libicu-dev libcurl4-openssl-dev libssl-dev libpng-dev libjpeg-dev libwebp-dev \

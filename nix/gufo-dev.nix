@@ -13,6 +13,9 @@
 }:
 let
   packageSuffix = if variant == null then "" else "-${variant}";
+  # XRT with its amdxdna plugin, as the engine links it. Engine pins before
+  # the NPU runtime have none.
+  xrt = engine.xrt or null;
   imageArgs = {
     name = "ghcr.io/gufo-org/toolboxes/gufo-dev";
     tag = imageTag;
@@ -33,6 +36,10 @@ let
       p.rocmPackages.rocprim
       p.rocmPackages.rocwmma
     ]
+    ++ p.lib.optionals (xrt != null) [
+      xrt
+      p.libuuid
+    ]
     ++ commonRuntimePkgs;
     extraCommands = ociFilesystemCommands;
     fakeRootCommands = commonArchiveOwnershipCommands;
@@ -45,7 +52,9 @@ let
         "GUFO_HIPCUB_ROOT=${p.rocmPackages.hipcub}"
         "GUFO_ROCPRIM_ROOT=${p.rocmPackages.rocprim}"
         "GUFO_ROCWMMA_ROOT=${p.rocmPackages.rocwmma}"
-      ];
+      ]
+      # CMake finds XRT here when building Gufo, and XRT its amdxdna plugin.
+      ++ p.lib.optional (xrt != null) "XILINX_XRT=${xrt}/opt/xilinx/xrt";
       Cmd = [ "/bin/bash" ];
       User = containerUser;
       WorkingDir = "/home/gufo";
