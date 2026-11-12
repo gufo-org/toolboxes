@@ -57,7 +57,7 @@ let
         "GUFO_ROCPRIM_ROOT=${p.rocmPackages.rocprim}"
         "GUFO_ROCWMMA_ROOT=${p.rocmPackages.rocwmma}"
       ]
-      # CMake finds XRT here when building Gufo, and XRT its amdxdna plugin.
+      # CMake finds XRT here when building Gufo.
       ++ p.lib.optional (xrt != null) "XILINX_XRT=${xrt}/opt/xilinx/xrt"
       # CMake compiles Gufo's NPU designs with this Python (cmake/GufoNpuDesigns.cmake).
       ++ p.lib.optionals (iron != null) [
