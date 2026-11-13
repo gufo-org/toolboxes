@@ -81,6 +81,10 @@
       # Minimal conventional filesystem around the immutable Nix closures.
       ociFilesystemCommands = ''
         mkdir -p bin usr/bin usr/lib tmp etc var/tmp var/log home/gufo nix/store
+        # Gufo's default extension store. Docker seeds a new named volume
+        # mounted here with this directory's owner; without it the volume is
+        # owned by root and `gufo extension install` cannot take its lock.
+        mkdir -p home/gufo/.local/share/gufo/extensions
         chmod 1777 tmp var/tmp
 
         ln -sf /bin/bash bin/sh
