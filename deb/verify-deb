@@ -26,11 +26,20 @@ test -s /usr/share/gufo/models/minimax_h3/MINIMAX_H3_FL2VA_BF16.source-manifest.
 dpkg -L gufo > /tmp/gufo-files
 if grep -E '/(usr/)?lib/systemd/|/etc/gufo|/nix/store/' /tmp/gufo-files; then exit 1; fi
 # Packages with the NPU runtime load the bundled XRT and its amdxdna plugin,
-# never an XRT from /opt/xilinx.
+# never an XRT from /opt/xilinx. Newer releases link it only from their NPU
+# module, so the executable starts without XRT.
 xrt=false
-if grep -q 'libxrt_coreutil' /tmp/gufo-ldd; then
+xrt_ldd=/tmp/gufo-ldd
+if [[ -e /usr/lib/gufo/libgufo_npu_xrt.so ]]; then
+  if grep -q 'libxrt_coreutil' /tmp/gufo-ldd; then exit 1; fi
+  ldd /usr/lib/gufo/libgufo_npu_xrt.so > /tmp/gufo-npu-ldd
+  cat /tmp/gufo-npu-ldd
+  if grep -E 'not found|/nix/store/' /tmp/gufo-npu-ldd; then exit 1; fi
+  xrt_ldd=/tmp/gufo-npu-ldd
+fi
+if grep -q 'libxrt_coreutil' "$xrt_ldd"; then
   xrt=true
-  grep -E 'libxrt_coreutil\.so\.2 => /usr/lib/gufo/xrt/lib/' /tmp/gufo-ldd
+  grep -E 'libxrt_coreutil\.so\.2 => /usr/lib/gufo/xrt/lib/' "$xrt_ldd"
   for lib in libxrt_core libxrt_driver_xdna; do
     test -e "/usr/lib/gufo/xrt/lib/$lib.so.2"
   done

@@ -34,11 +34,16 @@ printf '/opt/rocm/core-10.1/lib\n' > package/etc/ld.so.conf.d/gufo-rocm.conf
 printf '/etc/ld.so.conf.d/gufo-rocm.conf\n' > package/DEBIAN/conffiles
 printf 'activate ldconfig\n' > package/DEBIAN/triggers
 cp source/LICENSE package/usr/share/doc/gufo/copyright
-# The NPU runtime links XRT. Ship a private copy of the libraries the builder
-# made: libxrt_coreutil finds libxrt_core and the amdxdna plugin beside itself,
-# so this never conflicts with an XRT installed in /opt/xilinx/xrt. Releases
+# The NPU runtime links XRT: newer releases through their NPU module
+# (/usr/lib/gufo/libgufo_npu_xrt.so, loaded on first NPU use), older ones from
+# the executable. Ship a private copy of the libraries the builder made:
+# libxrt_coreutil finds libxrt_core and the amdxdna plugin beside itself, so
+# this never conflicts with an XRT installed in /opt/xilinx/xrt. Releases
 # before the NPU runtime link no XRT.
 shlib_inputs=(-epackage/usr/bin/gufo)
+for module in package/usr/lib/gufo/*.so; do
+  if [[ -e $module ]]; then shlib_inputs+=("-e$module"); fi
+done
 xrt_lib=/usr/lib/gufo/xrt/lib
 if [[ -d source/src/core/npu ]]; then
   mkdir -p "package$xrt_lib" package/usr/share/licenses/gufo/third-party

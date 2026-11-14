@@ -18,14 +18,16 @@ RUN git init /src/xdna-driver \
     && git -C /src/xdna-driver remote add origin https://github.com/amd/xdna-driver.git \
     && git -C /src/xdna-driver fetch --depth 1 origin "$XDNA_DRIVER_REV" \
     && git -C /src/xdna-driver checkout FETCH_HEAD \
-    && git -C /src/xdna-driver submodule update --init --recursive --depth 1 xrt
+    && git -C /src/xdna-driver submodule update --init --recursive --depth 1 xrt vtd
 # As in the Nix build: populate the 64 MiB device heap instead of locking it,
 # so the NPU needs no raised memlock limit.
 RUN sed -i 's/MAP_SHARED | MAP_LOCKED | flags/MAP_SHARED | MAP_POPULATE | flags/' \
       /src/xdna-driver/src/shim/buffer.cpp \
     && grep -q 'MAP_SHARED | MAP_POPULATE | flags' /src/xdna-driver/src/shim/buffer.cpp
+# -docker: skip kernel headers for the build host's kernel, which Debian need
+# not package (the package builds no kernel module).
 RUN apt-get update \
-    && /src/xdna-driver/xrt/src/runtime_src/tools/scripts/xrtdeps.sh \
+    && /src/xdna-driver/xrt/src/runtime_src/tools/scripts/xrtdeps.sh -docker \
     && rm -rf /var/lib/apt/lists/*
 RUN cd /src/xdna-driver/xrt/build && ./build.sh -npu -opt -noctest \
     && apt-get update && apt-get install -y --no-install-recommends ./Release/xrt_*.deb \
