@@ -21,7 +21,8 @@ For the XDNA NPU, the builder compiles XRT and its amdxdna plugin with
 xdna-driver's scripts, at the pair Gufo's Nix build pins and with the same
 heap patch (no memlock limit needed). The package ships a private copy of the
 three XRT libraries in `/usr/lib/gufo/xrt/lib`, so it needs no XRT package and
-never conflicts with one in `/opt/xilinx/xrt`. The NPU itself needs only the
+never conflicts with one in `/opt/xilinx/xrt`. Releases with Gufo's NPU module
+link XRT only from `/usr/lib/gufo/libgufo_npu_xrt.so`, loaded on first NPU use. The NPU itself needs only the
 kernel's `amdxdna` driver.
 The builder also provides rustup; `build-deb` installs the Rust toolchain and
 components selected by the release's `rust-toolchain.toml` before configuring
