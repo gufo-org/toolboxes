@@ -35,6 +35,10 @@ Contents write permission. The upload job mints its token after the build;
 existing release assets are never overwritten. Use the manual stable release
 workflow with a Gufo tag to recover a failed run.
 
+Gufo creates each release as a draft. Once the images are pushed and the
+Windows and Debian assets are attached, the workflow publishes it, so a release
+is never public without its assets.
+
 The examples use rootless Podman with `crun`. `--userns=keep-id:uid=1000,gid=1000`
 maps the invoking host user to the image's `gufo` account, so writable bind
 mounts work without changing their ownership. `--group-add keep-groups` carries
@@ -236,3 +240,6 @@ workflow, verifies the ZIP checksum, and replaces both the Windows ZIP and its
 checksums change. Replacement is explicit and defaults to disabled. Ordinary
 release dispatches still reject existing assets. No Linux images or image tags
 are changed when `windows-only` is enabled.
+
+If Gufo enables immutable releases, this repair works only while the release is
+still a draft: GitHub rejects asset changes on a published immutable release.
