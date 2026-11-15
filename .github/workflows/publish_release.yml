@@ -284,16 +284,13 @@ jobs:
   publish-release:
     # Gufo creates its release as a draft, so every asset is attached before
     # the release is public and, with immutable releases, before it is locked.
-    # Skipped jobs don't block this: a partial manual run that recovers the
-    # Windows or Debian upload can still complete the release.
-    if: ${{ !cancelled() && !failure() }}
+    # A windows-only or deb-only run doesn't publish: publish that draft by hand.
+    if: ${{ !(github.event_name == 'workflow_dispatch' && (inputs.windows-only || inputs.deb-only)) }}
     needs: [prepare, publish-windows, build-deb, build-and-push]
     runs-on: ubuntu-latest
     permissions: {}
     env:
       RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
-      RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
-      PARTIAL_RUN: ${{ github.event_name == 'workflow_dispatch' && (inputs.windows-only || inputs.deb-only) }}
     steps:
       - name: Create Gufo release app token
         id: app-token
@@ -305,35 +302,15 @@ jobs:
           repositories: gufo
           permission-contents: write
 
-      - name: Publish the Gufo release once every asset is attached
+      - name: Publish the Gufo draft release
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
         shell: bash
         run: |
           set -euo pipefail
-          release=$(gh release view "$RELEASE_TAG" --repo gufo-org/gufo --json isDraft,assets)
-          is_draft=$(jq -r '.isDraft' <<<"$release")
+          is_draft=$(gh release view "$RELEASE_TAG" --repo gufo-org/gufo --json isDraft --jq '.isDraft')
           if [[ "$is_draft" != true ]]; then
             echo "Release ${RELEASE_TAG} is already published."
             exit 0
           fi
-
-          missing=()
-          for asset in             "gufo-${RELEASE_TAG}-windows-x86_64.zip"             "gufo-${RELEASE_TAG}-windows-x86_64.zip.sha256"             "gufo_${RELEASE_VERSION}-1_amd64.deb"             "gufo_${RELEASE_VERSION}-1_amd64.deb.sha256"; do
-            if ! jq -e --arg name "$asset"               'any(.assets[]; .name == $name and .state == "uploaded")'               <<<"$release" >/dev/null; then
-              missing+=("$asset")
-            fi
-          done
-
-          if (( ${#missing[@]} > 0 )); then
-            message="Release ${RELEASE_TAG} stays a draft; missing assets: ${missing[*]}"
-            # A partial run legitimately leaves the other platform for later.
-            if [[ "$PARTIAL_RUN" == true ]]; then
-              echo "::warning::${message}"
-              exit 0
-            fi
-            echo "::error::${message}"
-            exit 1
-          fi
-
           gh release edit "$RELEASE_TAG" --repo gufo-org/gufo --draft=false
