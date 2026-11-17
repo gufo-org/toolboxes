@@ -11,13 +11,18 @@ This document details host-level configuration for running the Gufo Docker and P
 - **Linux Firmware**: `20260110` or later.
 - **Avoid**: `linux-firmware-20251125` (breaks ROCm initialization on gfx1151).
 
-### Kernel Boot Parameters
-Add the following parameters to your bootloader (e.g. GRUB or systemd-boot):
+### BIOS and Kernel Boot Parameters
+In the BIOS, set the GPU's dedicated memory (UMA frame buffer or iGPU memory size) to its minimum, 512 MiB. The GPU then takes its memory from system RAM through the GTT.
+
+Add the following parameters to your bootloader (e.g. GRUB or systemd-boot; on NixOS, `boot.kernelParams`). For 128 GiB of RAM they give the GPU 124 GiB and leave 4 GiB to the system:
 
 ```text
-amdgpu.gttsize=65536
+amdgpu.gttsize=126976 ttm.pages_limit=32505856
 ```
-*(On 128 GiB unified memory systems, this ensures sufficient GTT allocation for large model weights and KV caches).*
+
+For another size, `amdgpu.gttsize` is your RAM in MiB minus 4096, and `ttm.pages_limit` is that value times 256 (4 KiB pages). After rebooting, `/sys/class/drm/card*/device/mem_info_vram_total` reads 512 MiB and `mem_info_gtt_total` about your RAM minus 4 GiB.
+
+With a GTT limit well below RAM, Gufo still runs, but its RAM cache cannot borrow session memory that has not been used yet. See Gufo's [memory settings](https://github.com/gufo-org/gufo/blob/main/docs/install.md#memory-settings).
 
 ---
 
@@ -48,6 +53,14 @@ Large unified memory buffers require unlimited memlock limits. In `/etc/security
 * soft memlock unlimited
 * hard memlock unlimited
 ```
+
+Log out and back in (or reboot) so the systemd user manager picks it up, then check what a service gets:
+
+```bash
+systemd-run --user --wait --pipe sh -c 'ulimit -l'   # unlimited
+```
+
+With systemd's default of 8 MiB, Gufo still runs, but its GPU-visible host buffers fall back to memory the kernel may move, and GPU work can stall for seconds while it compacts memory.
 
 ---
 
