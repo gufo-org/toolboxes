@@ -280,3 +280,37 @@ jobs:
           docker tag "$exact_image" "${image_name}:latest"
           docker push "${image_name}:${RELEASE_SERIES}"
           docker push "${image_name}:latest"
+
+  publish-release:
+    # Gufo creates its release as a draft, so every asset is attached before
+    # the release is public and, with immutable releases, before it is locked.
+    # A windows-only or deb-only run doesn't publish: publish that draft by hand.
+    if: ${{ !(github.event_name == 'workflow_dispatch' && (inputs.windows-only || inputs.deb-only)) }}
+    needs: [prepare, publish-windows, build-deb, build-and-push]
+    runs-on: ubuntu-latest
+    permissions: {}
+    env:
+      RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+    steps:
+      - name: Create Gufo release app token
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          owner: gufo-org
+          repositories: gufo
+          permission-contents: write
+
+      - name: Publish the Gufo draft release
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          is_draft=$(gh release view "$RELEASE_TAG" --repo gufo-org/gufo --json isDraft --jq '.isDraft')
+          if [[ "$is_draft" != true ]]; then
+            echo "Release ${RELEASE_TAG} is already published."
+            exit 0
+          fi
+          gh release edit "$RELEASE_TAG" --repo gufo-org/gufo --draft=false
