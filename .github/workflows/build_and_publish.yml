@@ -16,7 +16,7 @@ permissions:
   packages: write
 
 concurrency:
-  group: publish-images-${{ github.ref }}
+  group: publish-images-main
   cancel-in-progress: false
 
 env:
@@ -25,18 +25,28 @@ env:
 
 jobs:
   prepare:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     outputs:
       matrix_json: ${{ steps.matrix.outputs.matrix_json }}
     steps:
       - id: matrix
+        env:
+          REQUESTED_IMAGES: ${{ inputs.images || 'all' }}
         shell: bash
         run: |
-          IN="${{ inputs.images || 'all' }}"
+          IN="$REQUESTED_IMAGES"
           if [[ "$IN" == "all" || -z "$IN" ]]; then
             echo 'matrix_json=["gufo-runtime","gufo-dev"]' >> "$GITHUB_OUTPUT"
           else
             IN_CLEAN=$(echo "$IN" | tr -d '[:space:]')
+            IFS=, read -ra targets <<< "$IN_CLEAN"
+            for target in "${targets[@]}"; do
+              case "$target" in
+                gufo-runtime|gufo-dev) ;;
+                *) echo "Unknown image: $target" >&2; exit 1 ;;
+              esac
+            done
             echo "matrix_json=[\"${IN_CLEAN//,/\",\"}\"]" >> "$GITHUB_OUTPUT"
           fi
 
@@ -79,21 +89,9 @@ jobs:
           echo "🔨 Building ${{ matrix.target }}-image with Nix..."
           nix build .#packages.x86_64-linux.${{ matrix.target }}-image --out-link result-${{ matrix.target }}
 
-      - name: Load and Push image to GHCR
-        run: |
-          set -euo pipefail
-          IMAGE_NAME="${{ env.IMAGE_PREFIX }}/${{ matrix.target }}"
-          GUFO_REVISION=$(jq -er '.nodes["gufo-engine"].locked.rev' flake.lock)
-          IMMUTABLE_TAG="sha-${GUFO_REVISION}"
-
-          echo "📥 Loading image into Docker daemon..."
-          docker load < result-${{ matrix.target }}
-
-          echo "🏷️ Tagging image..."
-          docker tag "${IMAGE_NAME}:edge" "${IMAGE_NAME}:${IMMUTABLE_TAG}"
-
-          echo "🚀 Pushing edge..."
-          docker push "${IMAGE_NAME}:edge"
-
-          echo "🚀 Pushing immutable Gufo revision tag ${IMMUTABLE_TAG}..."
-          docker push "${IMAGE_NAME}:${IMMUTABLE_TAG}"
+      - name: Verify and publish edge
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_REVISION: ${{ github.sha }}
+          TARGET: ${{ matrix.target }}
+        run: tools/publish-edge

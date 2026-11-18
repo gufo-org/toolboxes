@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+set -euo pipefail
+IMAGE_NAME="${IMAGE_PREFIX}/${TARGET}"
+GUFO_REVISION=$(jq -er '.nodes["gufo-engine"].locked.rev' flake.lock)
+docker load < "result-${TARGET}"
+actual=$(docker image inspect "${IMAGE_NAME}:edge" \
+  --format '{{ index .Config.Labels "org.gufo.engine.revision" }}')
+[[ "$actual" == "$GUFO_REVISION" ]]
+docker run --rm "${IMAGE_NAME}:edge" gufo --version
+
+# The concurrency group serializes publishers. A rerun of an old
+# commit must also pass this guard before it can replace edge.
+current=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq .object.sha)
+if [[ "$current" != "$EXPECTED_REVISION" ]]; then
+  echo "Skipping stale build $EXPECTED_REVISION; main is $current."
+  exit 0
+fi
+docker push "${IMAGE_NAME}:edge"
+echo "Published ${IMAGE_NAME}:edge from Gufo ${GUFO_REVISION}" >> "$GITHUB_STEP_SUMMARY"

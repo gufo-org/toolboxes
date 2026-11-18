@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# Merge immediately when eligible; otherwise let required checks gate auto-merge.
+set -euo pipefail
+branch=$1
+revision=$2
+args=(--squash --delete-branch --match-head-commit "$revision")
+state=$(gh pr view "$branch" --json mergeStateStatus --jq .mergeStateStatus)
+if [[ "$state" == CLEAN ]]; then
+  gh pr merge "$branch" "${args[@]}"
+else
+  status=0
+  gh pr merge "$branch" "${args[@]}" --auto || status=$?
+  if (( status != 0 )); then
+    # GitHub may finish computing mergeability between view and merge.
+    state=$(gh pr view "$branch" --json mergeStateStatus --jq .mergeStateStatus)
+    if [[ "$state" != CLEAN ]]; then
+      exit "$status"
+    fi
+    gh pr merge "$branch" "${args[@]}"
+  fi
+fi

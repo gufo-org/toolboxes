@@ -19,8 +19,20 @@ Toolbx and Distrobox are not supported. The containers run as the dedicated
 
 Stable releases publish immutable `X.Y.Z` tags plus the floating `X.Y` and
 `latest` aliases. The rolling `edge` channel follows the Gufo revision pinned
-by the daily dependency update and also publishes an immutable
-`sha-<full-gufo-revision>` tag. Rolling updates never advance `latest`.
+by the daily dependency update. Rolling builds replace only `edge`; they never
+advance `latest` or publish `sha-*` tags. The OCI label
+`org.gufo.engine.revision` records the exact Gufo revision.
+
+The daily update opens a dependency PR and merges it when repository rules
+allow; pending required checks use auto-merge. The resulting push builds both
+images. When Gufo has not changed, the daily job dispatches a build of current
+`main` to recover failed publications. To retry manually, run `Build & Publish
+Gufo OCI Images` on `main`. Stale builds cannot replace current images.
+
+Weekly cleanup removes legacy versions whose tags are all `sha-*`, and untagged
+versions older than 30 days. Versions sharing an `edge` or stable tag are
+preserved; their legacy SHA tags disappear when that version becomes eligible
+for cleanup. Cleanup never deletes a version carrying a non-SHA tag.
 
 The stable release workflow also calls Gufo's reusable Windows build for the
 exact release tag. It attaches `gufo-vX.Y.Z-windows-x86_64.zip` and a SHA-256
