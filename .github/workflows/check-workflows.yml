@@ -1,0 +1,22 @@
+name: Workflow checks
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test publishing and cleanup safeguards
+        run: python3 -m unittest discover -s tests -v
+      - name: Check shell syntax
+        run: |
+          for script in tools/merge-dependency-pr tools/publish-edge; do
+            bash -n "$script"
+          done

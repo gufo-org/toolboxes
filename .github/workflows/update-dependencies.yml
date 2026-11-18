@@ -8,6 +8,7 @@ on:
 
 permissions:
   contents: read
+  actions: write
 
 concurrency:
   group: update-gufo-dependencies
@@ -47,17 +48,28 @@ jobs:
       - name: Validate updated lock file
         run: nix flake check --no-build
 
-      - name: Open pull request and enable auto-merge
+      - name: Check for dependency changes
+        id: changes
+        run: |
+          if git diff --quiet -- flake.lock; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Rebuild edge when dependencies are unchanged
+        if: steps.changes.outputs.changed == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run build_and_publish.yml --repo "$GITHUB_REPOSITORY" --ref main
+
+      - name: Open and merge dependency pull request
+        if: steps.changes.outputs.changed == 'true'
         shell: bash
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           BRANCH: deps/update-gufo
         run: |
-          if git diff --quiet -- flake.lock; then
-            echo "No dependency updates available."
-            exit 0
-          fi
-
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git switch -c "$BRANCH"
@@ -72,4 +84,6 @@ jobs:
               --body "Automated update of the \`gufo-engine\` flake input."
           fi
 
-          gh pr merge "$BRANCH" --squash --auto --delete-branch
+          # App-token merges trigger the main push build. Do not dispatch a
+          # second build here, including when merge waits for required checks.
+          tools/merge-dependency-pr "$BRANCH" "$(git rev-parse HEAD)"
