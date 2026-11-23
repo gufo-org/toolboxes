@@ -28,6 +28,21 @@ The builder also provides rustup; `build-deb` installs the Rust toolchain and
 components selected by the release's `rust-toolchain.toml` before configuring
 CMake. Releases without that file skip the Rust toolchain download.
 
+## APT repository
+
+Once the release is public, the `publish-apt` job adds the package to the
+signed APT repository at <https://apt.gufo.blog>, maintained in
+[`gufo-org/apt`](https://github.com/gufo-org/apt). `deb/publish-apt` sends a
+repository dispatch with the release asset URL and SHA-256 and waits until the
+index serves that version. `deb/verify-apt` then installs the keyring package
+in a fresh runtime container, installs the previous version, upgrades to the
+release and removes everything. Publishing a version again with the same
+package is a no-op. A different package for a version already in the
+repository fails: clients hold the published hash, so release a new package
+revision instead of using `replace-deb-assets`. The job needs the release app
+installed on `gufo-org/apt` with Contents write. For a `deb-only` run of a
+draft release, publish the draft, then rerun the job.
+
 ## Build and verify locally
 
 ```sh
@@ -47,9 +62,14 @@ The builder defaults to two compiler jobs; pass `-e JOBS=...` to change it.
 Configure AMD's ROCm apt repository before installing: the package declares
 ROCm runtime dependencies rather than bundling them. See the `base` stage in
 `Dockerfile` for the repository and signing-key configuration used by the build.
-Then run `sudo apt install ./gufo_<version>-1_amd64.deb` and start Gufo manually.
+Then install from the APT repository, as described in
+[`gufo-org/apt`](https://github.com/gufo-org/apt#install), or run
+`sudo apt install ./gufo_<version>-1_amd64.deb` with a downloaded package.
+Start Gufo manually.
 
-The files here have four responsibilities: `Dockerfile` defines the build and
+The files here have these responsibilities: `Dockerfile` defines the build and
 clean test environments, `build-deb` builds and packages a release,
-`verify-deb` checks the installed artifact, and this README documents usage.
+`verify-deb` checks the installed artifact, `publish-apt` and `verify-apt`
+publish it to the APT repository and check the result, and this README
+documents usage.
 Release dispatch and publishing remain in the existing stable release workflow.

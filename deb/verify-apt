@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+# Run as root in the fresh runtime image, after deb/publish-apt:
+#   deb/verify-apt X.Y.Z
+# Installs the keyring package from the APT repository, installs the previous
+# Gufo version when there is one, upgrades to X.Y.Z, checks the installed
+# executable, and removes Gufo and the repository again.
+set -euo pipefail
+trap 'echo "APT repository verification failed at line $LINENO" >&2' ERR
+[[ $# == 1 ]] || { echo 'usage: deb/verify-apt VERSION' >&2; exit 2; }
+version=$1
+apt_url=${APT_URL:-https://apt.gufo.blog}
+sources=/etc/apt/sources.list.d/gufo.sources
+
+curl -fsSLo /tmp/gufo-archive-keyring.deb "$apt_url/gufo-archive-keyring.deb"
+apt-get update
+apt-get install -y /tmp/gufo-archive-keyring.deb
+test -s /usr/share/keyrings/gufo-archive-keyring.asc
+grep -qx "URIs: $apt_url" "$sources"
+apt-get update --error-on=any
+
+previous=$(apt-cache madison gufo | awk '{print $3}' |
+  while read -r candidate; do
+    if dpkg --compare-versions "$candidate" lt "$version-1"; then echo "$candidate"; fi
+  done | sort -V | tail -n 1)
+if [[ -n $previous ]]; then
+  apt-get install -y --no-install-recommends "gufo=$previous"
+  [[ $(dpkg-query -W -f='${Version}' gufo) == "$previous" ]]
+fi
+apt-get install -y --no-install-recommends gufo
+[[ $(dpkg-query -W -f='${Version}' gufo) == "$version-1" ]]
+actual=$(gufo --version)
+[[ $actual == "gufo version $version ("* ]] || { echo "Unexpected identity: $actual" >&2; exit 1; }
+apt-get purge -y gufo gufo-archive-keyring
+test ! -e /usr/bin/gufo
+test ! -e "$sources"
+test ! -e /usr/share/keyrings/gufo-archive-keyring.asc
+echo "Verified APT install of gufo $version-1${previous:+, upgraded from $previous}."

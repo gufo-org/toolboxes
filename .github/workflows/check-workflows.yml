@@ -17,6 +17,6 @@ jobs:
         run: python3 -m unittest discover -s tests -v
       - name: Check shell syntax
         run: |
-          for script in tools/merge-dependency-pr tools/publish-edge; do
+          for script in tools/merge-dependency-pr tools/publish-edge deb/publish-apt deb/verify-apt; do
             bash -n "$script"
           done

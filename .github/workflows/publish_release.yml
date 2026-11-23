@@ -314,3 +314,46 @@ jobs:
             exit 0
           fi
           gh release edit "$RELEASE_TAG" --repo gufo-org/gufo --draft=false
+
+  publish-apt:
+    # Runs once the release is public, since apt clients download the release
+    # asset. A deb-only run of an already published release adds it too; a
+    # deb-only run of a draft skips with a notice.
+    if: ${{ !cancelled() && needs.build-deb.result == 'success' && contains(fromJSON('["success", "skipped"]'), needs.publish-release.result) }}
+    needs: [prepare, build-deb, publish-release]
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    env:
+      RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+      RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create APT repository app token
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          owner: gufo-org
+          repositories: gufo,apt
+          permission-contents: write
+
+      - name: Add the Debian package to apt.gufo.blog
+        id: publish
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          set -o pipefail
+          deb/publish-apt "$RELEASE_TAG" | tee "$RUNNER_TEMP/publish-apt.log"
+          if grep -q '::notice::' "$RUNNER_TEMP/publish-apt.log"; then
+            echo "skipped=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install and upgrade from apt.gufo.blog in a fresh Debian container
+        if: ${{ steps.publish.outputs.skipped != 'true' }}
+        run: |
+          docker build --target runtime -t gufo-deb-runtime -f deb/Dockerfile deb
+          docker run --rm -v "$PWD:/work:ro" gufo-deb-runtime deb/verify-apt "$RELEASE_VERSION"
