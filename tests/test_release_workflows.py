@@ -144,5 +144,71 @@ esac
                 self.assertEqual(result.returncode == 0, label == 'gufo-rev' and run_status == '0')
 
 
+class AptPublishTests(unittest.TestCase):
+    SHA = 'a' * 64
+
+    def run_publish(self, draft='false', published='', after_dispatch=None):
+        with tempfile.TemporaryDirectory() as temp:
+            folder = Path(temp)
+            (folder / 'gh').write_text('''#!/bin/sh
+case "$1 $2" in
+  "release view") echo "$IS_DRAFT" ;;
+  "release download") echo "$SHA  gufo_1.2.3-1_amd64.deb" ;;
+  "api "*) printf '%s\\n' "$*" >> "$CAPTURE"; touch "$DISPATCHED" ;;
+esac
+''')
+            (folder / 'curl').write_text('''#!/bin/sh
+sha=$PUBLISHED
+if [ -e "$DISPATCHED" ]; then sha=$AFTER; fi
+printf 'Package: gufo\\nVersion: 1.2.2-1\\nSHA256: %s\\n\\n' "$(printf b%.0s $(seq 64))"
+if [ -n "$sha" ]; then printf 'Package: gufo\\nVersion: 1.2.3-1\\nSHA256: %s\\n' "$sha"; fi
+''')
+            for tool in ('gh', 'curl'):
+                (folder / tool).chmod(0o755)
+            capture = folder / 'commands'
+            env = dict(os.environ, PATH=f'{folder}:{os.environ["PATH"]}', IS_DRAFT=draft,
+                       SHA=self.SHA, PUBLISHED=published,
+                       AFTER=self.SHA if after_dispatch is None else after_dispatch,
+                       CAPTURE=str(capture), DISPATCHED=str(folder / 'dispatched'),
+                       APT_WAIT_SECONDS='3', APT_POLL_SECONDS='0')
+            result = subprocess.run([str(ROOT / 'deb/publish-apt'), 'v1.2.3'], env=env,
+                                    capture_output=True, text=True)
+            calls = capture.read_text().splitlines() if capture.exists() else []
+            return result, calls
+
+    def test_new_version_is_dispatched_and_awaited(self):
+        result, calls = self.run_publish()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(len(calls), 1)
+        self.assertIn('event_type=add-package', calls[0])
+        self.assertIn('client_payload[url]=https://github.com/gufo-org/gufo/releases/download/'
+                      'v1.2.3/gufo_1.2.3-1_amd64.deb', calls[0])
+        self.assertIn(f'client_payload[sha256]={self.SHA}', calls[0])
+
+    def test_draft_release_is_skipped(self):
+        result, calls = self.run_publish(draft='true')
+        self.assertEqual(result.returncode, 0)
+        self.assertIn('::notice::', result.stdout)
+        self.assertEqual(calls, [])
+
+    def test_identical_version_is_not_sent_again(self):
+        result, calls = self.run_publish(published=self.SHA)
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(calls, [])
+
+    def test_changed_package_for_published_version_fails(self):
+        result, calls = self.run_publish(published='c' * 64)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('immutable', result.stderr)
+        self.assertEqual(calls, [])
+
+    def test_wrong_published_hash_or_timeout_fails(self):
+        for after in ('c' * 64, ''):
+            with self.subTest(after=after):
+                result, calls = self.run_publish(after_dispatch=after)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertEqual(len(calls), 1)
+
+
 if __name__ == '__main__':
     unittest.main()

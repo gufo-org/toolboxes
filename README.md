@@ -47,6 +47,11 @@ Contents write permission. The upload job mints its token after the build;
 existing release assets are never overwritten. Use the manual stable release
 workflow with a Gufo tag to recover a failed run.
 
+Stable releases also add the Debian package to the signed APT repository at
+`https://apt.gufo.blog` ([`gufo-org/apt`](https://github.com/gufo-org/apt)),
+so Debian 13 hosts receive updates with `apt upgrade`. See
+[`deb/README.md`](deb/README.md).
+
 Gufo creates each release as a draft. Once the images are pushed and the
 Windows and Debian assets are attached, the workflow publishes it, so a release
 is never public without its assets. A `windows-only` or `deb-only` run doesn't

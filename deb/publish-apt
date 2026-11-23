@@ -1,0 +1,68 @@
+#!/usr/bin/env bash
+# Add a published release's Debian package to apt.gufo.blog and wait for it.
+#   deb/publish-apt vX.Y.Z
+# GH_TOKEN must be able to read gufo-org/gufo and send repository dispatches to
+# gufo-org/apt (Contents write). The release must be public: draft assets
+# can't be downloaded, so a draft is skipped with a notice. A version already
+# in the repository with the same SHA-256 is not sent again; one with a
+# different SHA-256 fails, because clients hold the published hash.
+set -euo pipefail
+[[ $# == 1 && $1 =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || {
+  echo 'usage: deb/publish-apt vX.Y.Z' >&2; exit 2;
+}
+tag=$1
+version=${tag#v}
+name="gufo_${version}-1_amd64.deb"
+apt_url=${APT_URL:-https://apt.gufo.blog}
+wait_seconds=${APT_WAIT_SECONDS:-1800}
+interval=${APT_POLL_SECONDS:-20}
+
+# Print the SHA-256 of gufo VERSION in the published index, if present.
+published_sha() {
+  curl -fsSL "$apt_url/dists/trixie/main/binary-amd64/Packages?ts=$(date +%s)" |
+    awk -v want="$1" 'BEGIN { RS = ""; FS = "\n" }
+      { p = v = s = ""
+        for (i = 1; i <= NF; i++) {
+          if ($i ~ /^Package: /) p = substr($i, 10)
+          else if ($i ~ /^Version: /) v = substr($i, 10)
+          else if ($i ~ /^SHA256: /) s = substr($i, 9)
+        }
+        if (p == "gufo" && v == want) print s }'
+}
+
+if [[ $(gh release view "$tag" --repo gufo-org/gufo --json isDraft --jq .isDraft) == true ]]; then
+  echo "::notice::Release $tag is a draft; publish it, then rerun to add $name to the APT repository."
+  exit 0
+fi
+sha=$(gh release download "$tag" --repo gufo-org/gufo --pattern "$name.sha256" --output - | awk '{print $1}')
+[[ $sha =~ ^[0-9a-f]{64}$ ]] || { echo "No SHA-256 for $name on $tag" >&2; exit 1; }
+
+existing=$(published_sha "$version-1")
+if [[ $existing == "$sha" ]]; then
+  echo "$name is already in the APT repository."
+  exit 0
+elif [[ -n $existing ]]; then
+  echo "The APT repository already has gufo $version-1 with SHA-256 $existing, not $sha." >&2
+  echo "Published versions are immutable; release a new package revision instead." >&2
+  exit 1
+fi
+
+gh api repos/gufo-org/apt/dispatches -f event_type=add-package \
+  -f "client_payload[url]=https://github.com/gufo-org/gufo/releases/download/$tag/$name" \
+  -f "client_payload[sha256]=$sha" -f 'client_payload[suite]=trixie' >/dev/null
+echo "Requested $name; waiting for $apt_url to serve it."
+
+deadline=$((SECONDS + wait_seconds))
+while (( SECONDS < deadline )); do
+  existing=$(published_sha "$version-1" || true)
+  if [[ $existing == "$sha" ]]; then
+    echo "$name is published in the APT repository."
+    exit 0
+  elif [[ -n $existing ]]; then
+    echo "The APT repository serves gufo $version-1 with SHA-256 $existing, not $sha." >&2
+    exit 1
+  fi
+  sleep "$interval"
+done
+echo "Timed out waiting for $name; check the Publish APT repository workflow in gufo-org/apt." >&2
+exit 1
