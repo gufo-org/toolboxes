@@ -30,7 +30,8 @@ jobs:
         uses: snok/container-retention-policy@v3.1.0
         with:
           account: gufo-org
-          image-names: "toolboxes/gufo-runtime toolboxes/gufo-dev"
+          # gufo-deb-cache: each release overwrites the Debian layer cache tags.
+          image-names: "toolboxes/gufo-runtime toolboxes/gufo-dev toolboxes/gufo-deb-cache"
           tag-selection: untagged
           cut-off: 30d
           token: ${{ secrets.GITHUB_TOKEN }}

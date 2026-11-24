@@ -56,6 +56,14 @@ docker run --rm -v "$PWD:/work:ro" -v /tmp/gufo-deb-release:/out:ro gufo-deb-run
 ```
 
 The builder defaults to two compiler jobs; pass `-e JOBS=...` to change it.
+To reuse compiled objects between builds, mount a directory and pass
+`-e CCACHE_DIR=...` pointing at it: `build-deb` then compiles C, C++ and HIP
+through ccache.
+
+In CI the builder and runtime layers are cached in
+`ghcr.io/gufo-org/toolboxes/gufo-deb-cache` (one tag per target), so only the
+stages after a Dockerfile change rebuild, and the ccache directory is kept in
+the Actions cache under `gufo-deb-ccache-v1-`.
 
 ## Installation
 
