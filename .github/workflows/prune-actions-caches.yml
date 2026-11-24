@@ -1,0 +1,35 @@
+name: Prune Actions Caches
+
+# Builds save rolling caches per run; keep only the newest entry per prefix so
+# the repository stays under the 10 GB Actions cache limit.
+
+on:
+  workflow_run:
+    workflows:
+      - Publish Stable Gufo Releases
+      - Warm Windows Release Caches
+    types: [completed]
+  schedule:
+    - cron: "17 5 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: prune-actions-caches
+  cancel-in-progress: false
+
+jobs:
+  prune:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Delete superseded cache entries
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 tools/prune-actions-caches.py --repo "$GITHUB_REPOSITORY" --apply

@@ -38,7 +38,7 @@ RUN cd /src/xdna-driver/xrt/build && ./build.sh -npu -opt -noctest \
 
 FROM xrt AS builder
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential dpkg-dev cmake ninja-build pkg-config python3 git binutils \
+    build-essential dpkg-dev cmake ninja-build ccache pkg-config python3 git binutils \
     libicu-dev libcurl4-openssl-dev libssl-dev libpng-dev libjpeg-dev libwebp-dev \
     libsndfile1-dev libsoxr-dev libavformat-dev libavcodec-dev libavutil-dev libswscale-dev \
     amdrocm-runtime-dev10.1 amdrocm-blas-dev10.1 amdrocm-blas10.1-gfx1151 \

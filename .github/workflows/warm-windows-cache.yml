@@ -1,0 +1,57 @@
+name: Warm Windows Release Caches
+
+# Actions caches belong to this repository, so the Windows release build never
+# sees Gufo main's. Releases alone leave them cold: entries unused for 7 days
+# are evicted, Gufo's windows-build.yml adds cache keys (such as the built Loom
+# runtime) that only a build here fills, and runner image updates rebuild the
+# vcpkg ports. Rebuilding the latest release between releases absorbs that,
+# so a release restores a recent compiler, vcpkg, IRON and Loom cache. The
+# called workflow uploads its ZIP only as an artifact of this run.
+
+on:
+  schedule:
+    # Mondays and Thursdays at 03:41 UTC, well inside the 7-day eviction.
+    - cron: "41 3 * * 1,4"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Gufo release tag to build (default, the latest release)
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: warm-windows-cache
+  cancel-in-progress: false
+
+jobs:
+  resolve:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - name: Select the release tag
+        id: tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REQUESTED_TAG: ${{ inputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag=${REQUESTED_TAG:-$(gh release view --repo gufo-org/gufo --json tagName --jq .tagName)}
+          if [[ ! "$tag" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo "Expected a Gufo release tag like v0.2.0, got: $tag" >&2
+            exit 1
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+  build-windows:
+    needs: resolve
+    permissions:
+      actions: read
+      contents: read
+    uses: gufo-org/gufo/.github/workflows/windows-build.yml@main
+    with:
+      release-tag: ${{ needs.resolve.outputs.tag }}

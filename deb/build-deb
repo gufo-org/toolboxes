@@ -22,12 +22,23 @@ fi
 # Fixed conservative parallelism; the caller supplies a container memory limit.
 jobs=${JOBS:-2}
 [[ $jobs =~ ^[1-9][0-9]*$ ]] || { echo 'JOBS must be positive' >&2; exit 2; }
+# With CCACHE_DIR set (the release workflow mounts a restored cache there),
+# compile C, C++ and HIP through ccache. Gufo's CMake finds ccache for C and
+# C++ itself but leaves HIP alone outside clang-cl; older releases do neither.
+# CCACHE_BASEDIR makes the random work directory irrelevant to cache hits.
+launchers=()
+if [[ -n ${CCACHE_DIR:-} ]] && command -v ccache >/dev/null; then
+  export CCACHE_BASEDIR=$work CCACHE_NOHASHDIR=true
+  launchers=(-DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DCMAKE_HIP_COMPILER_LAUNCHER=ccache)
+  ccache --zero-stats
+fi
 cmake -S source -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
   -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_PREFIX_PATH=/opt/rocm/core-10.1 \
   -DCMAKE_HIP_COMPILER=/opt/rocm/core-10.1/lib/llvm/bin/clang++ -DCMAKE_HIP_COMPILER_ROCM_ROOT=/opt/rocm/core-10.1 \
   -DCMAKE_HIP_FLAGS=--rocm-path=/opt/rocm/core-10.1 -DCMAKE_SKIP_INSTALL_RPATH=ON -DBUILD_TESTING=OFF -DGUFO_BUILD_TOOLS=OFF \
-  -DGUFO_RELEASE_VERSION="$version" -DGUFO_REVISION="$revision"
+  -DGUFO_RELEASE_VERSION="$version" -DGUFO_REVISION="$revision" "${launchers[@]}"
 cmake --build build --parallel "$jobs" --target gufo
+if [[ ${#launchers[@]} -gt 0 ]]; then ccache --show-stats; fi
 DESTDIR="$work/package" cmake --install build --strip
 mkdir -p package/DEBIAN package/etc/ld.so.conf.d package/usr/share/doc/gufo debian
 printf '/opt/rocm/core-10.1/lib\n' > package/etc/ld.so.conf.d/gufo-rocm.conf

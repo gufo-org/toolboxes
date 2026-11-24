@@ -33,7 +33,6 @@ on:
 
 permissions:
   contents: read
-  packages: write
 
 concurrency:
   group: publish-stable-${{ github.event.client_payload.tag || inputs.tag }}
@@ -140,23 +139,107 @@ jobs:
     needs: prepare
     runs-on: ubuntu-latest
     timeout-minutes: 180
+    permissions:
+      contents: read
+      # Read and write the Docker layer cache in GHCR.
+      packages: write
     env:
       RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
       RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+      # Every layer of both targets, mode=max, one tag per target. The cache
+      # lives in GHCR rather than the Actions cache, which the multi-GB ROCm
+      # builder would crowd out of its 10 GB limit.
+      DEB_CACHE: ghcr.io/${{ github.repository }}/gufo-deb-cache
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Build Debian builder and runtime test images
+      # The builder exists twice (BuildKit's store and the loaded image).
+      - name: Free disk space
         run: |
-          docker build --target builder -t gufo-deb-builder -f deb/Dockerfile deb
-          docker build --target runtime -t gufo-deb-runtime -f deb/Dockerfile deb
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache
+          df -h
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      # A Dockerfile change rebuilds only its stage and those after it. Cache
+      # export failures warn instead of failing the release.
+      - name: Build Debian builder image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: deb
+          file: deb/Dockerfile
+          target: builder
+          tags: gufo-deb-builder
+          load: true
+          provenance: false
+          sbom: false
+          cache-from: type=registry,ref=${{ env.DEB_CACHE }}:builder
+          cache-to: type=registry,ref=${{ env.DEB_CACHE }}:builder,mode=max,image-manifest=true,oci-mediatypes=true,ignore-error=true
+
+      - name: Build Debian runtime test image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: deb
+          file: deb/Dockerfile
+          target: runtime
+          tags: gufo-deb-runtime
+          load: true
+          provenance: false
+          sbom: false
+          cache-from: |
+            type=registry,ref=${{ env.DEB_CACHE }}:runtime
+            type=registry,ref=${{ env.DEB_CACHE }}:builder
+          cache-to: type=registry,ref=${{ env.DEB_CACHE }}:runtime,mode=max,image-manifest=true,oci-mediatypes=true,ignore-error=true
+
+      # Restore the newest compiler cache; each run saves its own entry and
+      # the cache pruning workflow keeps only the newest.
+      - name: Restore compiler cache
+        id: ccache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/deb-ccache
+          key: gufo-deb-ccache-v1-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            gufo-deb-ccache-v1-
 
       - name: Build the release package
         run: |
-          mkdir -p release
+          mkdir -p release "$RUNNER_TEMP/deb-ccache"
           docker run --rm --memory 12g --memory-swap 12g \
+            -e CCACHE_DIR=/ccache -e CCACHE_MAXSIZE=2G \
+            -v "$RUNNER_TEMP/deb-ccache:/ccache" \
             -v "$PWD:/work" gufo-deb-builder \
             deb/build-deb "$RELEASE_TAG" /work/release
+
+      # Also after a failed build: its objects still help the next attempt.
+      # The container writes the cache as root.
+      # An empty directory would become the newest entry: skip it.
+      - name: Prepare compiler cache for saving
+        id: ccache-save
+        if: always() && steps.ccache.outcome == 'success'
+        run: |
+          dir="$RUNNER_TEMP/deb-ccache"
+          if [[ -d $dir && -n $(ls -A "$dir") ]]; then
+            sudo chown -R "$(id -u):$(id -g)" "$dir"
+            echo "save=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Save compiler cache
+        if: always() && steps.ccache-save.outputs.save == 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/deb-ccache
+          key: gufo-deb-ccache-v1-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Verify installation in a fresh Debian container
         run: |
@@ -203,6 +286,9 @@ jobs:
     if: ${{ !(github.event_name == 'workflow_dispatch' && (inputs.windows-only || inputs.deb-only)) }}
     needs: prepare
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
     strategy:
       fail-fast: false
       matrix:

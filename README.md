@@ -47,6 +47,12 @@ Contents write permission. The upload job mints its token after the build;
 existing release assets are never overwritten. Use the manual stable release
 workflow with a Gufo tag to recover a failed run.
 
+Actions caches belong to this repository, so the Windows build cannot reuse
+Gufo main's. `Warm Windows Release Caches` rebuilds the latest release twice a
+week to keep the compiler, vcpkg, IRON and Loom caches here current, and
+`Prune Actions Caches` keeps only the newest entry per cache prefix so the
+repository stays under the 10 GB limit.
+
 Stable releases also add the Debian package to the signed APT repository at
 `https://apt.gufo.blog` ([`gufo-org/apt`](https://github.com/gufo-org/apt)),
 so Debian 13 hosts receive updates with `apt upgrade`. See
