@@ -37,7 +37,14 @@ RUN cd /src/xdna-driver/xrt/build && ./build.sh -npu -opt -noctest \
     && test -e /opt/xilinx/xrt/lib/libxrt_driver_xdna.so.2
 
 FROM xrt AS builder
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# The release workflow derives DEPS_EPOCH from AMD's and Debian's InRelease
+# files, so a repository update rebuilds this stage (not XRT) from the current
+# packages instead of reusing cached apt layers. The upgrade refreshes packages
+# the xrt stage installed: their versions feed the package's Depends.
+ARG DEPS_EPOCH=unset
+RUN echo "dependency epoch: $DEPS_EPOCH" \
+    && apt-get update && apt-get upgrade -y --no-install-recommends \
+    && apt-get install -y --no-install-recommends \
     build-essential dpkg-dev cmake ninja-build ccache pkg-config python3 git binutils \
     libicu-dev libcurl4-openssl-dev libssl-dev libpng-dev libjpeg-dev libwebp-dev \
     libsndfile1-dev libsoxr-dev libavformat-dev libavcodec-dev libavutil-dev libswscale-dev \

@@ -171,6 +171,29 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
+      # Cached apt layers would otherwise keep the first fill's ROCm and
+      # Debian packages, and with them the Depends lower bounds, until the
+      # base image changes. A new InRelease in either archive changes the
+      # epoch and rebuilds the builder stage; XRT stays cached. Without the
+      # files, fall back to the ISO week.
+      - name: Identify the package repository state
+        id: deps
+        shell: bash
+        run: |
+          set -euo pipefail
+          if epoch=$(for url in \
+                https://stable.repo.amd.com/rocm/core/packages/debian13/dists/stable/InRelease \
+                https://deb.debian.org/debian/dists/trixie/InRelease \
+                https://deb.debian.org/debian/dists/trixie-updates/InRelease \
+                https://security.debian.org/debian-security/dists/trixie-security/InRelease; do
+                curl -fsSL --retry 3 --max-time 60 "$url"
+              done | sha256sum | cut -c1-16); then
+            echo "epoch=repos-$epoch" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::Cannot read the package repository state; using a weekly epoch"
+            echo "epoch=week-$(date -u +%G-W%V)" >> "$GITHUB_OUTPUT"
+          fi
+
       # A Dockerfile change rebuilds only its stage and those after it. Cache
       # export failures warn instead of failing the release.
       - name: Build Debian builder image
@@ -180,6 +203,7 @@ jobs:
           file: deb/Dockerfile
           target: builder
           tags: gufo-deb-builder
+          build-args: DEPS_EPOCH=${{ steps.deps.outputs.epoch }}
           load: true
           provenance: false
           sbom: false
